@@ -1,0 +1,127 @@
+Build a full-stack Hospital IPD Management System using:
+
+- Next.js (App Router)
+- Tailwind CSS
+- Prisma ORM
+- PostgreSQL database
+- JWT Authentication
+- Role-based access (IPD Manager and Doctor)
+
+The application should include the following features:
+
+1. Authentication:
+- Secure login system.
+- Role-based access control (Manager, Doctor).
+
+2. Database Models:
+
+User:
+- id
+- name
+- email
+- password
+- role (MANAGER or DOCTOR)
+
+Patient:
+- id
+- ipdNumber (auto-generated unique)
+- name
+- gender
+- dateOfBirth
+- phone
+- relativePhone
+- illness
+- admissionDate (auto)
+- expectedDischargeDate
+- roomType
+- bedNumber
+- discharged (boolean)
+- createdAt
+
+Doctor:
+- id
+- name
+- specialization
+- visitCharge
+- userId (linked to User)
+
+Medicine:
+- id
+- name
+- unitCost
+
+Visit:
+- id
+- patientId
+- doctorId
+- date
+- charge
+
+Prescription:
+- id
+- patientId
+- medicineId
+- quantity
+- totalCost
+
+RoomType:
+- id
+- name
+- dailyCharge
+
+Charge:
+- id
+- patientId
+- type (ROOM, NURSING, OTHER)
+- amount
+
+3. IPD Manager Dashboard:
+
+- Add patient
+- Assign doctors
+- Add medicines
+- Add visits
+- Add room & nursing charges
+- View patient list in table format
+- Show:
+    - Days admitted (auto calculate)
+    - Current bill (auto calculate)
+    - Doctors visited
+    - Medicines given
+- Discharge patient
+- Print bill (PDF format)
+- Edit patient details
+
+4. Doctor Dashboard:
+
+- Show assigned patients
+- Show visit count
+- Show revenue generated
+- Add visit entry
+
+5. Hospital Overview Dashboard:
+
+- Total admitted patients
+- Total beds occupied
+- Total revenue
+- Revenue breakdown (room, doctor, medicine)
+- Active doctors count
+
+6. Billing Logic:
+
+Automatically calculate:
+- Room charge = daily charge × days admitted
+- Doctor charges = sum of visit charges
+- Medicine charges = quantity × unit cost
+- Nursing charges per day
+- Grand total
+
+7. UI:
+
+- Clean hospital admin panel UI
+- Sidebar navigation
+- Responsive design
+- Professional medical theme
+
+Generate full folder structure, Prisma schema, API routes, and frontend pages.
+Make the project production-ready.
