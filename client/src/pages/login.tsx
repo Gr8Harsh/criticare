@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Activity, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import logoImg from "@assets/Adobe_Express_-_file_1772173054491.png";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -42,11 +43,11 @@ export default function Login() {
 
       <Card className="w-full max-w-md shadow-2xl border-border/50 bg-background/80 backdrop-blur-xl z-10">
         <CardHeader className="space-y-3 pb-6 text-center">
-          <div className="mx-auto bg-primary w-14 h-14 rounded-2xl flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/30 mb-2">
-            <Activity className="w-8 h-8" />
+          <div className="mx-auto w-20 h-20 rounded-2xl flex items-center justify-center overflow-hidden mb-2">
+            <img src={logoImg} alt="Criticare Logo" className="w-full h-full object-contain" />
           </div>
           <CardTitle className="text-3xl font-display font-bold text-primary tracking-tight">
-            MediCare IPD
+            Criticare IPD
           </CardTitle>
           <CardDescription className="text-base font-medium">
             Sign in to access the hospital management system

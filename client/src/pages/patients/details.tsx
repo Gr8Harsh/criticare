@@ -362,7 +362,7 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
   return (
     <Card className={`border-border/50 shadow-md ${printMode ? 'border-none shadow-none' : ''}`}>
       <CardHeader className="text-center border-b pb-6 mb-4">
-        <h2 className="text-3xl font-display font-bold text-primary">MediCare Hospital</h2>
+        <h2 className="text-3xl font-display font-bold text-primary">Criticare Hospital</h2>
         <p className="text-muted-foreground">Official IPD Final Bill</p>
       </CardHeader>
       <CardContent className="space-y-8 p-8 pt-0">
@@ -419,7 +419,7 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
         
         {printMode && (
           <div className="mt-16 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-            <p>Thank you for choosing MediCare Hospital. This is a computer generated bill.</p>
+            <p>Thank you for choosing Criticare Hospital. This is a computer generated bill.</p>
           </div>
         )}
       </CardContent>

@@ -5,6 +5,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Activity, LayoutDashboard, Users, UserRound, Pill, DoorOpen, LogOut } from "lucide-react";
 import { useAuth, useLogout } from "@/hooks/use-auth";
+import logoImg from "@assets/Adobe_Express_-_file_1772173054491.png";
 
 export function AppSidebar() {
   const [location] = useLocation();
@@ -26,11 +27,9 @@ export function AppSidebar() {
     <Sidebar className="border-r border-border/50">
       <SidebarHeader className="p-4 border-b border-border/50 bg-primary/5">
         <div className="flex items-center gap-3">
-          <div className="bg-primary p-2 rounded-xl text-primary-foreground shadow-md shadow-primary/20">
-            <Activity className="w-5 h-5" />
-          </div>
+          <img src={logoImg} alt="Criticare Logo" className="w-10 h-10 object-contain" />
           <div className="font-display font-bold text-lg text-primary tracking-tight">
-            MediCare IPD
+            Criticare IPD
           </div>
         </div>
       </SidebarHeader>
