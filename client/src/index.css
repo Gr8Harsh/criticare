@@ -9,53 +9,53 @@
     --font-display: 'Outfit', sans-serif;
     --font-sans: 'Plus Jakarta Sans', sans-serif;
 
-    /* Professional Medical Theme - Teal/Blue Base */
-    --background: 210 33% 99%;
-    --foreground: 222 47% 11%;
+    /* Professional Hospital Theme - Dark Green Base matching logo */
+    --background: 160 33% 98%;
+    --foreground: 160 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 160 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 160 47% 11%;
 
-    --primary: 186 100% 33%; /* Deep Teal */
+    --primary: 162 44% 25%; /* Forest Green from logo */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 100% 96%;
-    --secondary-foreground: 186 100% 25%;
+    --secondary: 160 40% 94%;
+    --secondary-foreground: 162 44% 20%;
 
-    --muted: 214 32% 91%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 160 20% 90%;
+    --muted-foreground: 160 16% 40%;
 
-    --accent: 199 89% 48%; /* Bright Blue */
+    --accent: 7 76% 56%; /* Red/Orange flame color from logo */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 186 100% 33%;
+    --border: 160 20% 88%;
+    --input: 160 20% 88%;
+    --ring: 162 44% 25%;
 
     --radius: 0.75rem;
 
     /* Sidebar */
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 186 100% 33%;
+    --sidebar-foreground: 160 5.3% 26.1%;
+    --sidebar-primary: 162 44% 25%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 100% 96%;
-    --sidebar-accent-foreground: 186 100% 33%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 186 100% 33%;
+    --sidebar-accent: 160 40% 94%;
+    --sidebar-accent-foreground: 162 44% 25%;
+    --sidebar-border: 160 13% 91%;
+    --sidebar-ring: 162 44% 25%;
     
     /* Charts */
-    --chart-1: 186 100% 33%;
-    --chart-2: 199 89% 48%;
-    --chart-3: 156 73% 58%;
-    --chart-4: 210 100% 70%;
-    --chart-5: 186 60% 20%;
+    --chart-1: 162 44% 25%;
+    --chart-2: 7 76% 56%;
+    --chart-3: 142 76% 36%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 162 60% 15%;
   }
 
   * {
