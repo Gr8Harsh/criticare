@@ -35,13 +35,12 @@ export function setupAuth(app: Express) {
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      secure: true,        // 🔥 required for HTTPS
+      secure: true,        // 🔥 REQUIRED FOR HTTPS DEPLOY
       httpOnly: true,
-      sameSite: "none",    // 🔥 VERY IMPORTANT
+      sameSite: "none",    // 🔥 REQUIRED FOR CROSS-SITE COOKIES
       maxAge: 1000 * 60 * 60 * 24 * 7
     }
   };
-
   app.set("trust proxy", 1);
   app.use(session(sessionSettings));
   app.use(passport.initialize());

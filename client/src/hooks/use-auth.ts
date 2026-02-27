@@ -41,7 +41,10 @@ export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const res = await fetch(api.auth.logout.path, { method: "POST", credentials: "include" });
+      const res = await fetch(api.auth.logout.path, {
+        method: "POST",
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Failed to logout");
     },
     onSuccess: () => {
