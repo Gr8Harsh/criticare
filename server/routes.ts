@@ -7,7 +7,7 @@ import { z } from "zod";
 
 export async function registerRoutes(
   httpServer: Server,
-  app: Express
+  app: Express,
 ): Promise<Server> {
   const { hashPassword } = setupAuth(app);
 
@@ -18,10 +18,13 @@ export async function registerRoutes(
       if (existingUser) {
         return res.status(400).json({ message: "Email already exists" });
       }
-      
+
       const hashedPassword = await hashPassword(input.password);
-      const user = await storage.createUser({ ...input, password: hashedPassword });
-      
+      const user = await storage.createUser({
+        ...input,
+        password: hashedPassword,
+      });
+
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Error logging in" });
         return res.status(201).json(user);
@@ -35,15 +38,19 @@ export async function registerRoutes(
   });
 
   app.post(api.auth.login.path, (req, res, next) => {
-    import("passport").then(p => p.default.authenticate("local", (err: any, user: any, info: any) => {
-      if (err) return next(err);
-      if (!user) return res.status(401).json({ message: "Invalid credentials" });
-      
-      req.login(user, (err) => {
+    console.log("LOGIN ROUTE HIT");
+    import("passport").then((p) =>
+      p.default.authenticate("local", (err: any, user: any, info: any) => {
         if (err) return next(err);
-        return res.json(user);
-      });
-    })(req, res, next));
+        if (!user)
+          return res.status(401).json({ message: "Invalid credentials" });
+
+        req.login(user, (err) => {
+          if (err) return next(err);
+          return res.json(user);
+        });
+      })(req, res, next),
+    );
   });
 
   app.post(api.auth.logout.path, (req, res) => {
@@ -62,7 +69,8 @@ export async function registerRoutes(
 
   // Protect API routes
   const requireAuth = (req: any, res: any, next: any) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    if (!req.isAuthenticated())
+      return res.status(401).json({ message: "Not authenticated" });
     next();
   };
 
@@ -82,7 +90,8 @@ export async function registerRoutes(
       const patient = await storage.createPatient(input);
       res.status(201).json(patient);
     } catch (err) {
-      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      if (err instanceof z.ZodError)
+        return res.status(400).json({ message: err.errors[0].message });
       throw err;
     }
   });
@@ -94,9 +103,9 @@ export async function registerRoutes(
   });
 
   app.post(api.patients.discharge.path, async (req, res) => {
-    const patient = await storage.updatePatient(Number(req.params.id), { 
-      discharged: true, 
-      expectedDischargeDate: new Date() 
+    const patient = await storage.updatePatient(Number(req.params.id), {
+      discharged: true,
+      expectedDischargeDate: new Date(),
     });
     if (!patient) return res.status(404).json({ message: "Patient not found" });
     res.json(patient);
@@ -112,31 +121,48 @@ export async function registerRoutes(
     const chargesList = await storage.getChargesByPatient(patientId);
 
     const doctorCharges = visits.reduce((acc, v) => acc + v.charge, 0);
-    const medicineCharges = prescriptions.reduce((acc, p) => acc + p.totalCost, 0);
-    
+    const medicineCharges = prescriptions.reduce(
+      (acc, p) => acc + p.totalCost,
+      0,
+    );
+
     let roomCharge = 0;
     let nursingCharges = 0;
     let otherCharges = 0;
 
-    chargesList.forEach(c => {
-      if (c.type === 'ROOM') roomCharge += c.amount;
-      else if (c.type === 'NURSING') nursingCharges += c.amount;
-      else if (c.type === 'OTHER') otherCharges += c.amount;
+    chargesList.forEach((c) => {
+      if (c.type === "ROOM") roomCharge += c.amount;
+      else if (c.type === "NURSING") nursingCharges += c.amount;
+      else if (c.type === "OTHER") otherCharges += c.amount;
     });
 
     const admissionDate = new Date(patient.admissionDate);
-    const dischargeDate = patient.discharged && patient.expectedDischargeDate ? new Date(patient.expectedDischargeDate) : new Date();
-    const daysAdmitted = Math.max(1, Math.ceil((dischargeDate.getTime() - admissionDate.getTime()) / (1000 * 3600 * 24)));
+    const dischargeDate =
+      patient.discharged && patient.expectedDischargeDate
+        ? new Date(patient.expectedDischargeDate)
+        : new Date();
+    const daysAdmitted = Math.max(
+      1,
+      Math.ceil(
+        (dischargeDate.getTime() - admissionDate.getTime()) /
+          (1000 * 3600 * 24),
+      ),
+    );
 
     if (roomCharge === 0) {
       const roomTypes = await storage.getRoomTypes();
-      const roomType = roomTypes.find(r => r.id === patient.roomTypeId);
+      const roomType = roomTypes.find((r) => r.id === patient.roomTypeId);
       if (roomType) {
         roomCharge = roomType.dailyCharge * daysAdmitted;
       }
     }
 
-    const grandTotal = roomCharge + doctorCharges + medicineCharges + nursingCharges + otherCharges;
+    const grandTotal =
+      roomCharge +
+      doctorCharges +
+      medicineCharges +
+      nursingCharges +
+      otherCharges;
 
     res.json({
       daysAdmitted,
@@ -149,7 +175,7 @@ export async function registerRoutes(
       visits,
       prescriptions,
       charges: chargesList,
-      patient
+      patient,
     });
   });
 
@@ -158,7 +184,7 @@ export async function registerRoutes(
       const { doctorId } = api.patients.assignDoctor.input.parse(req.body);
       const pd = await storage.assignDoctor(Number(req.params.id), doctorId);
       res.status(201).json(pd);
-    } catch(err) {
+    } catch (err) {
       res.status(400).json({ message: "Invalid input" });
     }
   });
@@ -181,7 +207,7 @@ export async function registerRoutes(
   app.get(api.doctors.stats.path, async (req, res) => {
     const doctorId = Number(req.params.id);
     const visits = await storage.getVisitsByDoctor(doctorId);
-    
+
     const visitCount = visits.length;
     const revenueGenerated = visits.reduce((acc, v) => acc + v.charge, 0);
 
@@ -254,13 +280,19 @@ export async function registerRoutes(
     const visitsList = await storage.getVisits();
     const chargesList = await storage.getCharges();
 
-    const totalAdmitted = patientsList.filter(p => !p.discharged).length;
+    const totalAdmitted = patientsList.filter((p) => !p.discharged).length;
     const totalBedsOccupied = totalAdmitted;
-    
+
     let doctorRev = visitsList.reduce((acc, v) => acc + v.charge, 0);
-    let roomRev = chargesList.filter(c => c.type === 'ROOM').reduce((acc, c) => acc + c.amount, 0);
-    let nursingRev = chargesList.filter(c => c.type === 'NURSING').reduce((acc, c) => acc + c.amount, 0);
-    let otherRev = chargesList.filter(c => c.type === 'OTHER').reduce((acc, c) => acc + c.amount, 0);
+    let roomRev = chargesList
+      .filter((c) => c.type === "ROOM")
+      .reduce((acc, c) => acc + c.amount, 0);
+    let nursingRev = chargesList
+      .filter((c) => c.type === "NURSING")
+      .reduce((acc, c) => acc + c.amount, 0);
+    let otherRev = chargesList
+      .filter((c) => c.type === "OTHER")
+      .reduce((acc, c) => acc + c.amount, 0);
     let medicineRev = 0; // if we want we can calculate from prescriptions
 
     const totalRevenue = doctorRev + roomRev + nursingRev + otherRev;
@@ -274,9 +306,9 @@ export async function registerRoutes(
         doctor: doctorRev,
         medicine: medicineRev,
         nursing: nursingRev,
-        other: otherRev
+        other: otherRev,
       },
-      activeDoctors: doctorsList.length
+      activeDoctors: doctorsList.length,
     });
   });
 

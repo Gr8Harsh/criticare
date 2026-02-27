@@ -35,8 +35,10 @@ export function setupAuth(app: Express) {
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      secure: app.get("env") === "production",
-      maxAge: 1000 * 60 * 60 * 24 * 7 // 1 week
+      secure: true,        // 🔥 required for HTTPS
+      httpOnly: true,
+      sameSite: "none",    // 🔥 VERY IMPORTANT
+      maxAge: 1000 * 60 * 60 * 24 * 7
     }
   };
 
@@ -48,18 +50,40 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy({ usernameField: "email" }, async (email, password, done) => {
       try {
+        console.log("---- LOGIN ATTEMPT ----");
+        console.log("Email entered:", email);
+        console.log("Password entered:", password);
+
         const user = await storage.getUserByEmail(email);
-        if (!user || !(await comparePasswords(password, user.password))) {
+
+        console.log("User from DB:", user);
+
+        if (!user) {
+          console.log("User NOT found");
           return done(null, false);
         }
+
+        console.log("Stored password:", user.password);
+
+        const isValid = await comparePasswords(password, user.password);
+
+        console.log("Password match result:", isValid);
+
+        if (!isValid) {
+          console.log("Password did NOT match");
+          return done(null, false);
+        }
+
+        console.log("Login success");
         return done(null, user);
       } catch (err) {
+        console.log("ERROR:", err);
         return done(err);
       }
     }),
   );
-
   passport.serializeUser((user, done) => done(null, user.id));
+
   passport.deserializeUser(async (id: number, done) => {
     try {
       const user = await storage.getUser(id);
@@ -68,6 +92,9 @@ export function setupAuth(app: Express) {
       done(err);
     }
   });
-
+  (async () => {
+    const hashed = await hashPassword("password123");
+    console.log("MANAGER HASH:", hashed);
+  })();
   return { hashPassword };
-}
+  }
