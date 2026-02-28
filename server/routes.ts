@@ -285,23 +285,42 @@ export async function registerRoutes(
     const doctorsList = await storage.getDoctors();
     const visitsList = await storage.getVisits();
     const chargesList = await storage.getCharges();
+    const roomTypes = await storage.getRoomTypes();
 
     const totalAdmitted = patientsList.filter((p) => !p.discharged).length;
     const totalBedsOccupied = totalAdmitted;
 
     let doctorRev = visitsList.reduce((acc, v) => acc + v.charge, 0);
-    let roomRev = chargesList
-      .filter((c) => c.type === "ROOM")
-      .reduce((acc, c) => acc + c.amount, 0);
+    
+    // Calculate room revenue for all patients (including currently admitted)
+    let roomRev = 0;
+    for (const patient of patientsList) {
+      const admissionDate = new Date(patient.admissionDate);
+      const dischargeDate = patient.discharged && patient.expectedDischargeDate 
+        ? new Date(patient.expectedDischargeDate) 
+        : new Date();
+      
+      const days = Math.max(1, Math.ceil((dischargeDate.getTime() - admissionDate.getTime()) / (1000 * 3600 * 24)));
+      const roomType = roomTypes.find(rt => rt.id === patient.roomTypeId);
+      if (roomType) {
+        roomRev += roomType.dailyCharge * days;
+      }
+    }
+
+    // Add explicit room charges if any exist in charges table
+    roomRev += chargesList.filter(c => c.type === 'ROOM').reduce((acc, c) => acc + c.amount, 0);
+
     let nursingRev = chargesList
       .filter((c) => c.type === "NURSING")
       .reduce((acc, c) => acc + c.amount, 0);
     let otherRev = chargesList
       .filter((c) => c.type === "OTHER")
       .reduce((acc, c) => acc + c.amount, 0);
-    let medicineRev = 0; // if we want we can calculate from prescriptions
+    
+    const prescriptions = await storage.getPrescriptions();
+    let medicineRev = prescriptions.reduce((acc, p) => acc + p.totalCost, 0);
 
-    const totalRevenue = doctorRev + roomRev + nursingRev + otherRev;
+    const totalRevenue = doctorRev + roomRev + nursingRev + otherRev + medicineRev;
 
     res.json({
       totalAdmitted,

@@ -130,6 +130,10 @@ export class DatabaseStorage {
     const [pd] = await db.insert(patientDoctors).values({ patientId, doctorId }).returning();
     return pd;
   }
+  async getPrescriptions(): Promise<Prescription[]> {
+    return await db.select().from(prescriptions);
+  }
+
   async getAssignedDoctors(patientId: number): Promise<PatientDoctor[]> {
     return await db.select().from(patientDoctors).where(eq(patientDoctors.patientId, patientId));
   }

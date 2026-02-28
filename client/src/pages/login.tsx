@@ -27,7 +27,8 @@ export default function Login() {
     loginMutation.mutate(values, {
       onSuccess: () => {
         toast({ title: "Welcome back", description: "Successfully logged in." });
-        setLocation("/");
+        // Force a window reload to ensure session is picked up by useAuth
+        window.location.href = "/";
       },
       onError: (err) => {
         toast({ title: "Login Failed", description: err.message, variant: "destructive" });
