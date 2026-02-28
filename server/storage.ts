@@ -44,11 +44,17 @@ export class DatabaseStorage {
     const [patient] = await db.select().from(patients).where(eq(patients.id, id));
     return patient;
   }
-  async createPatient(insertPatient: InsertPatient): Promise<Patient> {
+  async createPatient(insertPatient: InsertPatient & { doctorId?: number }): Promise<Patient> {
+    const { doctorId, ...patientData } = insertPatient;
     const [patient] = await db.insert(patients).values({
-      ...insertPatient,
+      ...patientData,
       ipdNumber: `IPD-${Date.now()}`
     }).returning();
+    
+    if (doctorId) {
+      await this.assignDoctor(patient.id, doctorId);
+    }
+    
     return patient;
   }
   async updatePatient(id: number, updates: Partial<InsertPatient>): Promise<Patient> {
@@ -126,6 +132,10 @@ export class DatabaseStorage {
   }
   async getAssignedDoctors(patientId: number): Promise<PatientDoctor[]> {
     return await db.select().from(patientDoctors).where(eq(patientDoctors.patientId, patientId));
+  }
+
+  async deleteCharge(id: number): Promise<void> {
+    await db.delete(charges).where(eq(charges.id, id));
   }
 }
 

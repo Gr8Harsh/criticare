@@ -86,14 +86,20 @@ export async function registerRoutes(
 
   app.post(api.patients.create.path, async (req, res) => {
     try {
-      const input = api.patients.create.input.parse(req.body);
-      const patient = await storage.createPatient(input);
+      const { doctorId, ...patientData } = req.body;
+      const patient = await storage.createPatient({ ...patientData, doctorId });
       res.status(201).json(patient);
     } catch (err) {
       if (err instanceof z.ZodError)
         return res.status(400).json({ message: err.errors[0].message });
       throw err;
     }
+  });
+
+  app.delete(api.charges.create.path + "/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    await storage.deleteCharge(id);
+    res.sendStatus(204);
   });
 
   app.get(api.patients.get.path, async (req, res) => {

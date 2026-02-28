@@ -296,6 +296,8 @@ function MedicinesTab({ patient, prescriptions, isManager }: { patient: any, pre
 function ChargesTab({ patient, charges, isManager }: { patient: any, charges: any[], isManager: boolean }) {
   const [open, setOpen] = useState(false);
   const createCharge = useCreateCharge();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const form = useForm({ defaultValues: { type: "OTHER", amount: "" }});
 
@@ -303,6 +305,16 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
     createCharge.mutate({ patientId: patient.id, type: data.type, amount: parseInt(data.amount) }, {
       onSuccess: () => setOpen(false)
     });
+  };
+
+  const handleDelete = async (id: number) => {
+    if (confirm("Are you sure you want to remove this charge?")) {
+      const res = await fetch(`/api/charges/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (res.ok) {
+        toast({ title: "Success", description: "Charge removed." });
+        queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      }
+    }
   };
 
   return (
@@ -342,13 +354,20 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
       </CardHeader>
       <CardContent>
         <Table>
-          <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="w-[100px]"></TableHead></TableRow></TableHeader>
           <TableBody>
             {charges.map((c: any) => (
               <TableRow key={c.id}>
                 <TableCell>{format(new Date(c.date), "MMM dd, yyyy")}</TableCell>
                 <TableCell>{c.type}</TableCell>
                 <TableCell className="text-right font-medium">${c.amount}</TableCell>
+                <TableCell className="text-right">
+                  {!patient.discharged && isManager && (
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)} className="text-destructive">
+                      <Plus className="w-4 h-4 rotate-45" />
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { usePatients, useCreatePatient } from "@/hooks/use-patients";
 import { useRoomTypes } from "@/hooks/use-room-types";
+import { useDoctors } from "@/hooks/use-doctors";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,10 @@ import { useToast } from "@/hooks/use-toast";
 
 const formSchema = insertPatientSchema.extend({
   roomTypeId: z.coerce.number().min(1, "Room type is required"),
+  doctorId: z.coerce.number().optional(),
+}).partial({
+  illness: true,
+  phone: true,
 });
 
 export default function PatientsList() {
@@ -97,7 +102,7 @@ export default function PatientsList() {
                     <TableRow key={patient.id} className="hover:bg-secondary/20 transition-colors">
                       <TableCell className="font-medium text-primary">{patient.ipdNumber}</TableCell>
                       <TableCell className="font-bold">{patient.name}</TableCell>
-                      <TableCell>{patient.illness}</TableCell>
+                      <TableCell>{patient.illness || "Not specified"}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 text-muted-foreground text-sm">
                           <Calendar className="w-3 h-3" />
@@ -130,11 +135,12 @@ function AddPatientForm({ onSuccess }: { onSuccess: () => void }) {
   const { toast } = useToast();
   const createPatient = useCreatePatient();
   const { data: roomTypes } = useRoomTypes();
+  const { data: doctors } = useDoctors();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: "", gender: "Male", dateOfBirth: "", phone: "", relativePhone: "", illness: "", roomTypeId: 0, bedNumber: "", discharged: false
+      name: "", gender: "Male", dateOfBirth: "", phone: "", relativePhone: "", illness: "", roomTypeId: 0, bedNumber: "", discharged: false, doctorId: undefined
     },
   });
 
@@ -178,13 +184,13 @@ function AddPatientForm({ onSuccess }: { onSuccess: () => void }) {
             <FormItem><FormLabel>Date of Birth</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={form.control} name="illness" render={({ field }) => (
-            <FormItem><FormLabel>Illness / Diagnosis</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>Illness / Diagnosis (Optional)</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
           )} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FormField control={form.control} name="phone" render={({ field }) => (
-            <FormItem><FormLabel>Phone Number</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>Phone Number (Optional)</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={form.control} name="relativePhone" render={({ field }) => (
             <FormItem><FormLabel>Relative's Phone (Optional)</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
@@ -210,6 +216,21 @@ function AddPatientForm({ onSuccess }: { onSuccess: () => void }) {
             <FormItem><FormLabel>Bed Number</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
           )} />
         </div>
+
+        <FormField control={form.control} name="doctorId" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Assign Doctor</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+              <FormControl><SelectTrigger><SelectValue placeholder="Select doctor" /></SelectTrigger></FormControl>
+              <SelectContent>
+                {doctors?.map(doc => (
+                  <SelectItem key={doc.id} value={doc.id.toString()}>Dr. {doc.name} ({doc.specialization})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )} />
 
         <Button type="submit" className="w-full mt-4" disabled={createPatient.isPending}>
           {createPatient.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
