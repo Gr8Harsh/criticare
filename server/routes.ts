@@ -102,6 +102,12 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  app.get("/api/patients/:id/doctors", async (req, res) => {
+    const patientId = Number(req.params.id);
+    const assignedDoctors = await storage.getAssignedDoctors(patientId);
+    res.json(assignedDoctors);
+  });
+
   app.get(api.patients.get.path, async (req, res) => {
     const patient = await storage.getPatient(Number(req.params.id));
     if (!patient) return res.status(404).json({ message: "Patient not found" });

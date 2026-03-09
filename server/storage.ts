@@ -134,8 +134,21 @@ export class DatabaseStorage {
     return await db.select().from(prescriptions);
   }
 
-  async getAssignedDoctors(patientId: number): Promise<PatientDoctor[]> {
-    return await db.select().from(patientDoctors).where(eq(patientDoctors.patientId, patientId));
+  async getAssignedDoctors(patientId: number): Promise<any[]> {
+    const pds = await db.select().from(patientDoctors).where(eq(patientDoctors.patientId, patientId));
+    const results = [];
+    for (const pd of pds) {
+      const doc = await db.select().from(doctors).where(eq(doctors.id, pd.doctorId));
+      if (doc.length > 0) {
+        results.push({
+          id: pd.id,
+          patientId: pd.patientId,
+          doctorId: pd.doctorId,
+          doctorName: doc[0].name,
+        });
+      }
+    }
+    return results;
   }
 
   async deleteCharge(id: number): Promise<void> {

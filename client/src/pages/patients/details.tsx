@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { usePatient, usePatientBill, useDischargePatient, useAssignDoctor } from "@/hooks/use-patients";
+import { usePatient, usePatientBill, useDischargePatient, useAssignDoctor, useAssignedDoctors } from "@/hooks/use-patients";
 import { useCreateVisit, useCreatePrescription, useCreateCharge } from "@/hooks/use-billing";
 import { useDoctors } from "@/hooks/use-doctors";
 import { useMedicines } from "@/hooks/use-medicines";
@@ -27,6 +27,7 @@ export default function PatientDetails() {
   const { data: user } = useAuth();
   const { data: patient, isLoading: pLoading } = usePatient(id);
   const { data: bill, isLoading: bLoading } = usePatientBill(id);
+  const { data: assignedDoctors } = useAssignedDoctors(id);
   const dischargeMutation = useDischargePatient();
   const { toast } = useToast();
 
@@ -87,7 +88,8 @@ export default function PatientDetails() {
               <div><p className="text-muted-foreground mb-1">Age/Gender</p><p className="font-semibold">{new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()}y / {patient.gender}</p></div>
               <div><p className="text-muted-foreground mb-1">Admission Date</p><p className="font-semibold">{format(new Date(patient.admissionDate), "MMM dd, yyyy")}</p></div>
               <div><p className="text-muted-foreground mb-1">Bed Assigned</p><p className="font-semibold">{patient.bedNumber}</p></div>
-              <div><p className="text-muted-foreground mb-1">Diagnosis</p><p className="font-semibold">{patient.illness}</p></div>
+              <div><p className="text-muted-foreground mb-1">Diagnosis</p><p className="font-semibold">{patient.illness || "Not specified"}</p></div>
+              <div><p className="text-muted-foreground mb-1">Assigned Doctor</p><p className="font-semibold">{assignedDoctors && assignedDoctors.length > 0 ? `Dr. ${assignedDoctors[0].doctorName}` : "Not assigned"}</p></div>
             </div>
           </CardContent>
         </Card>

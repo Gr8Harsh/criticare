@@ -76,6 +76,18 @@ export function useDischargePatient() {
   });
 }
 
+export function useAssignedDoctors(patientId: number) {
+  return useQuery({
+    queryKey: ['/api/patients', patientId, 'doctors'],
+    queryFn: async () => {
+      const res = await fetch(`/api/patients/${patientId}/doctors`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch assigned doctors");
+      return res.json();
+    },
+    enabled: !!patientId,
+  });
+}
+
 export function useAssignDoctor() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -92,6 +104,7 @@ export function useAssignDoctor() {
     },
     onSuccess: (_, { patientId }) => {
       queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patientId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/patients', patientId, 'doctors'] });
     },
   });
 }
