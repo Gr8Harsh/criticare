@@ -13,13 +13,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { insertChargeSchema } from "@shared/schema";
+import { api } from "@shared/routes";
 
 export default function PatientDetails() {
   const params = useParams();
@@ -301,11 +304,22 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const form = useForm({ defaultValues: { type: "OTHER", amount: "" }});
+  const chargeFormSchema = insertChargeSchema.extend({ patientId: z.coerce.number(), amount: z.coerce.number() });
+  const form = useForm<z.infer<typeof chargeFormSchema>>({
+    resolver: zodResolver(chargeFormSchema),
+    defaultValues: { type: "OTHER", amount: 0, patientId: patient.id }
+  });
 
-  const onSubmit = (data: any) => {
-    createCharge.mutate({ patientId: patient.id, type: data.type, amount: parseInt(data.amount) }, {
-      onSuccess: () => setOpen(false)
+  const onSubmit = (data: z.infer<typeof chargeFormSchema>) => {
+    createCharge.mutate({ patientId: patient.id, type: data.type, amount: data.amount }, {
+      onSuccess: () => {
+        toast({ title: "Success", description: "Charge added successfully." });
+        form.reset({ type: "OTHER", amount: 0, patientId: patient.id });
+        setOpen(false);
+      },
+      onError: (error: any) => {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
     });
   };
 
@@ -315,6 +329,8 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
       if (res.ok) {
         toast({ title: "Success", description: "Charge removed." });
         queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      } else {
+        toast({ title: "Error", description: "Failed to remove charge.", variant: "destructive" });
       }
     }
   };
@@ -326,28 +342,45 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
         {!patient.discharged && isManager && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="hover-elevate"><Plus className="w-4 h-4 mr-2" /> Add Charge</Button>
+              <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90"><Plus className="w-4 h-4 mr-2" /> Add Charge</Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add Extra Charge</DialogTitle></DialogHeader>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle className="font-display">Add Extra Charge</DialogTitle>
+              </DialogHeader>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField control={form.control} name="type" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Charge Type</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                         <SelectContent>
                           <SelectItem value="NURSING">Nursing</SelectItem>
                           <SelectItem value="OTHER">Other Service</SelectItem>
                         </SelectContent>
                       </Select>
+                      <FormMessage />
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="amount" render={({ field }) => (
-                    <FormItem><FormLabel>Amount ($)</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl></FormItem>
+                    <FormItem>
+                      <FormLabel>Amount ($)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )} />
-                  <Button type="submit" className="w-full" disabled={createCharge.isPending}>Save</Button>
+                  <div className="flex gap-2">
+                    <Button type="submit" className="flex-1 bg-primary hover:bg-primary/90" disabled={createCharge.isPending}>
+                      {createCharge.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Save
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1">
+                      Cancel
+                    </Button>
+                  </div>
                 </form>
               </Form>
             </DialogContent>
@@ -355,25 +388,29 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
         )}
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="w-[100px]"></TableHead></TableRow></TableHeader>
-          <TableBody>
-            {charges.map((c: any) => (
-              <TableRow key={c.id}>
-                <TableCell>{format(new Date(c.date), "MMM dd, yyyy")}</TableCell>
-                <TableCell>{c.type}</TableCell>
-                <TableCell className="text-right font-medium">${c.amount}</TableCell>
-                <TableCell className="text-right">
-                  {!patient.discharged && isManager && (
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)} className="text-destructive">
-                      <Plus className="w-4 h-4 rotate-45" />
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        {charges.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No additional charges</div>
+        ) : (
+          <Table>
+            <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader>
+            <TableBody>
+              {charges.map((c: any) => (
+                <TableRow key={c.id}>
+                  <TableCell>{format(new Date(c.date), "MMM dd, yyyy")}</TableCell>
+                  <TableCell>{c.type}</TableCell>
+                  <TableCell className="text-right font-medium">${c.amount}</TableCell>
+                  <TableCell className="text-right">
+                    {!patient.discharged && isManager && (
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)} className="text-destructive hover:bg-destructive/10" data-testid={`button-delete-charge-${c.id}`}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
