@@ -81,10 +81,11 @@ export function useAssignedDoctors(patientId: number) {
     queryKey: ['/api/patients', patientId, 'doctors'],
     queryFn: async () => {
       const res = await fetch(`/api/patients/${patientId}/doctors`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch assigned doctors");
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: !!patientId,
+    retry: 0,
   });
 }
 
