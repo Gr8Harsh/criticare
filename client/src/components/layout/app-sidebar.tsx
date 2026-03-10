@@ -12,7 +12,8 @@ export function AppSidebar() {
   const { data: user } = useAuth();
   const logoutMutation = useLogout();
 
-  const isManager = user?.role === 'MANAGER';
+  const isAdmin = user?.role === 'ADMIN';
+  const isManager = user?.role === 'MANAGER' || isAdmin;
   const isDoctor = user?.role === 'DOCTOR';
 
   const menuItems = [
@@ -20,7 +21,7 @@ export function AppSidebar() {
     { title: "Patients", url: "/patients", icon: Users, show: isManager || isDoctor },
     { title: "Doctors", url: "/doctors", icon: UserRound, show: isManager },
     { title: "Medicines", url: "/medicines", icon: Pill, show: isManager },
-    { title: "Room Types", url: "/room-types", icon: DoorOpen, show: isManager },
+    { title: "Room Configuration", url: "/room-types", icon: DoorOpen, show: isAdmin },
   ];
 
   return (

@@ -55,7 +55,7 @@ export default function DoctorsList() {
 
   const filteredDoctors = doctors?.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
 
-  if (user?.role !== 'MANAGER') return <div>Unauthorized</div>;
+  if (user?.role !== 'MANAGER' && user?.role !== 'ADMIN') return <div>Unauthorized</div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

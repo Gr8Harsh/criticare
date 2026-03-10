@@ -30,6 +30,8 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
+import RoomTypesPage from "@/pages/room-types";
+
 function Router() {
   return (
     <Switch>
@@ -52,8 +54,7 @@ function Router() {
         <Shell><ProtectedRoute component={MedicinesList} /></Shell>
       </Route>
       <Route path="/room-types">
-        {/* Simplified fallback for room types, reuses dashboard frame */}
-        <Shell><ProtectedRoute component={() => <div className="p-8 text-center text-muted-foreground">Room Types Configuration - Accessible via API</div>} /></Shell>
+        <Shell><ProtectedRoute component={RoomTypesPage} /></Shell>
       </Route>
       
       <Route component={NotFound} />

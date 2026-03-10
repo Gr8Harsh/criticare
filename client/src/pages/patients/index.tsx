@@ -46,7 +46,7 @@ export default function PatientsList() {
           <h1 className="text-3xl font-display font-bold tracking-tight">Patients</h1>
           <p className="text-muted-foreground">Manage IPD admissions and records.</p>
         </div>
-        {user?.role === 'MANAGER' && (
+        {(user?.role === 'MANAGER' || user?.role === 'ADMIN') && (
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button className="hover-elevate shadow-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl">

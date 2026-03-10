@@ -23,7 +23,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {user.role === 'MANAGER' ? <ManagerDashboard /> : <DoctorDashboard userId={user.id} />}
+      {user.role === 'DOCTOR' ? <DoctorDashboard userId={user.id} /> : <ManagerDashboard isAdmin={user.role === 'ADMIN'} />}
     </div>
   );
 }
@@ -44,7 +44,7 @@ function StatCard({ title, value, icon: Icon, colorClass }: { title: string, val
   );
 }
 
-function ManagerDashboard() {
+function ManagerDashboard({ isAdmin }: { isAdmin?: boolean }) {
   const { data, isLoading } = useDashboardOverview();
 
   if (isLoading) return <div className="flex p-12 justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -60,6 +60,23 @@ function ManagerDashboard() {
 
   return (
     <div className="space-y-8">
+      {isAdmin && (
+        <Card className="border-primary/20 bg-primary/5 shadow-sm overflow-hidden">
+          <CardHeader className="bg-primary/10 py-3">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <Stethoscope className="w-4 h-4" /> Admin Controls
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 flex gap-4">
+            <Button size="sm" variant="outline" asChild className="hover-elevate">
+              <Link href="/doctors">Manage Staff Accounts</Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild className="hover-elevate">
+              <Link href="/room-types">Update Room Charges</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Admitted Patients" 

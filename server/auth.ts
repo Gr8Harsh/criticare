@@ -91,9 +91,22 @@ export function setupAuth(app: Express) {
       done(err);
     }
   });
+
+  // Seed Admin user if not exists
   (async () => {
-    const hashed = await hashPassword("password123");
-    console.log("MANAGER HASH:", hashed);
+    const adminEmail = "admin@test.com";
+    const existingAdmin = await storage.getUserByEmail(adminEmail);
+    if (!existingAdmin) {
+      const hashed = await hashPassword("admin123");
+      await storage.createUser({
+        name: "Hospital Admin",
+        email: adminEmail,
+        password: hashed,
+        role: "ADMIN"
+      });
+      console.log("ADMIN USER CREATED: admin@test.com / admin123");
+    }
   })();
+
   return { hashPassword };
-  }
+}

@@ -74,9 +74,32 @@ export async function registerRoutes(
     next();
   };
 
+  const requireAdmin = (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated() || req.user.role !== 'ADMIN')
+      return res.status(403).json({ message: "Admin access required" });
+    next();
+  };
+
   app.use("/api", (req, res, next) => {
     if (req.path.startsWith("/auth")) return next();
     requireAuth(req, res, next);
+  });
+
+  // Admin only routes for managing users and room types
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    const allUsers = await db.select().from(users);
+    res.json(allUsers.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })));
+  });
+
+  app.post("/api/admin/room-types/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { dailyCharge } = z.object({ dailyCharge: z.coerce.number() }).parse(req.body);
+      const [updated] = await db.update(roomTypes).set({ dailyCharge }).where(eq(roomTypes.id, id)).returning();
+      res.json(updated);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
   });
 
   app.get(api.patients.list.path, async (req, res) => {

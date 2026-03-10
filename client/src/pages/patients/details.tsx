@@ -76,7 +76,7 @@ export default function PatientDetails() {
                 </p>
               </div>
               <div className="flex gap-2 no-print">
-                {user?.role === 'MANAGER' && !patient.discharged && (
+                {(user?.role === 'MANAGER' || user?.role === 'ADMIN') && !patient.discharged && (
                   <Button onClick={handleDischarge} disabled={dischargeMutation.isPending} variant="outline" className="border-destructive text-destructive hover:bg-destructive hover:text-white transition-colors">
                     {dischargeMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Discharge Patient
                   </Button>
@@ -152,6 +152,9 @@ export default function PatientDetails() {
 // ----------------------------------------------------------------------------
 
 function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[], isManager: boolean }) {
+  const { data: user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
   const { data: doctors } = useDoctors();
   const createVisit = useCreateVisit();
@@ -175,7 +178,7 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
         <CardTitle className="font-display">Doctor Visits</CardTitle>
         {!patient.discharged && (
           <div className="flex gap-2">
-            {isManager && doctors && (
+            {canManage && doctors && (
               <Select onValueChange={(val) => handleAssignDoctor(parseInt(val))}>
                 <SelectTrigger className="w-[180px] h-9"><UserPlus className="w-4 h-4 mr-2" /><SelectValue placeholder="Assign Doctor" /></SelectTrigger>
                 <SelectContent>{doctors.map(d => <SelectItem key={d.id} value={d.id.toString()}>{d.name} ({d.specialization})</SelectItem>)}</SelectContent>
@@ -232,6 +235,9 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
 }
 
 function MedicinesTab({ patient, prescriptions, isManager }: { patient: any, prescriptions: any[], isManager: boolean }) {
+  const { data: user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
   const { data: medicines } = useMedicines();
   const createPrescription = useCreatePrescription();
@@ -251,7 +257,7 @@ function MedicinesTab({ patient, prescriptions, isManager }: { patient: any, pre
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-display">Prescribed Medicines</CardTitle>
-        {!patient.discharged && isManager && (
+        {!patient.discharged && canManage && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="hover-elevate"><Plus className="w-4 h-4 mr-2" /> Add Medicine</Button>
@@ -299,6 +305,9 @@ function MedicinesTab({ patient, prescriptions, isManager }: { patient: any, pre
 }
 
 function ChargesTab({ patient, charges, isManager }: { patient: any, charges: any[], isManager: boolean }) {
+  const { data: user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
   const createCharge = useCreateCharge();
   const queryClient = useQueryClient();
@@ -343,7 +352,7 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-display">Additional Charges</CardTitle>
-        {!patient.discharged && isManager && (
+        {!patient.discharged && canManage && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90"><Plus className="w-4 h-4 mr-2" /> Add Charge</Button>
@@ -400,7 +409,7 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
                   <TableCell>{c.type}</TableCell>
                   <TableCell className="text-right font-medium">${c.amount}</TableCell>
                   <TableCell className="text-right">
-                    {!patient.discharged && isManager && (
+                    {!patient.discharged && canManage && (
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)} className="text-destructive hover:bg-destructive/10" data-testid={`button-delete-charge-${c.id}`}>
                         <X className="w-4 h-4" />
                       </Button>
