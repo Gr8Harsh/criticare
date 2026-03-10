@@ -15,20 +15,57 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 
+const userSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(6),
+  role: z.enum(["MANAGER", "DOCTOR"]),
+});
+
 const doctorSchema = z.object({
   name: z.string().min(2),
   specialization: z.string().min(2),
   visitCharge: z.coerce.number().min(0),
-  userId: z.coerce.number().min(1, "Create a User account first and provide ID"),
+  userId: z.coerce.number().min(1, "Select a User account"),
 });
 
 export default function DoctorsList() {
   const { data: doctors, isLoading } = useDoctors();
-  const { data: user } = useAuth();
+  const { data: user: currentUser } = useAuth();
   const [search, setSearch] = useState("");
-  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [isAddDoctorOpen, setIsAddDoctorOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const { data: usersList } = useQuery<any[]>({
+    queryKey: ["/api/admin/users"],
+    enabled: currentUser?.role === 'ADMIN'
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof userSchema>) => {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to create user");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "User created successfully" });
+      setIsAddUserOpen(false);
+      userForm.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
 
   const createDoctor = useMutation({
     mutationFn: async (data: z.infer<typeof doctorSchema>) => {
@@ -44,51 +81,107 @@ export default function DoctorsList() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.doctors.list.path] });
       toast({ title: "Doctor added successfully" });
-      setIsAddOpen(false);
+      setIsAddDoctorOpen(false);
+      doctorForm.reset();
     }
   });
 
-  const form = useForm<z.infer<typeof doctorSchema>>({
+  const userForm = useForm<z.infer<typeof userSchema>>({
+    resolver: zodResolver(userSchema),
+    defaultValues: { name: "", email: "", password: "", role: "DOCTOR" }
+  });
+
+  const doctorForm = useForm<z.infer<typeof doctorSchema>>({
     resolver: zodResolver(doctorSchema),
     defaultValues: { name: "", specialization: "", visitCharge: 0, userId: 0 }
   });
 
   const filteredDoctors = doctors?.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
 
-  if (user?.role !== 'MANAGER' && user?.role !== 'ADMIN') return <div>Unauthorized</div>;
+  if (currentUser?.role !== 'MANAGER' && currentUser?.role !== 'ADMIN') return <div>Unauthorized</div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-display font-bold tracking-tight">Doctors</h1>
-          <p className="text-muted-foreground">Manage hospital medical staff.</p>
+          <h1 className="text-3xl font-display font-bold tracking-tight">Staff Management</h1>
+          <p className="text-muted-foreground">Manage hospital medical and administrative staff.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="hover-elevate shadow-lg"><Plus className="w-5 h-5 mr-2" /> Add Doctor</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Doctor Profile</DialogTitle></DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit((d) => createDoctor.mutate(d))} className="space-y-4">
-                <FormField control={form.control} name="name" render={({ field }) => (
-                  <FormItem><FormLabel>Name</FormLabel><FormControl><Input placeholder="John Doe" {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="specialization" render={({ field }) => (
-                  <FormItem><FormLabel>Specialization</FormLabel><FormControl><Input placeholder="Cardiology" {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="visitCharge" render={({ field }) => (
-                  <FormItem><FormLabel>Visit Charge ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="userId" render={({ field }) => (
-                  <FormItem><FormLabel>Linked User ID</FormLabel><FormControl><Input type="number" {...field} /></FormControl></FormItem>
-                )} />
-                <Button type="submit" className="w-full" disabled={createDoctor.isPending}>Save Profile</Button>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+        <div className="flex gap-2">
+          {currentUser?.role === 'ADMIN' && (
+            <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="hover-elevate shadow-sm"><Plus className="w-5 h-5 mr-2" /> Add User Account</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Create New User Account</DialogTitle></DialogHeader>
+                <Form {...userForm}>
+                  <form onSubmit={userForm.handleSubmit((d) => createUserMutation.mutate(d))} className="space-y-4">
+                    <FormField control={userForm.control} name="name" render={({ field }) => (
+                      <FormItem><FormLabel>Full Name</FormLabel><FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={userForm.control} name="email" render={({ field }) => (
+                      <FormItem><FormLabel>Email Address</FormLabel><FormControl><Input type="email" placeholder="john@example.com" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={userForm.control} name="password" render={({ field }) => (
+                      <FormItem><FormLabel>Password</FormLabel><FormControl><Input type="password" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={userForm.control} name="role" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Role</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="MANAGER">Manager</SelectItem>
+                            <SelectItem value="DOCTOR">Doctor</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <Button type="submit" className="w-full" disabled={createUserMutation.isPending}>Create User</Button>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          )}
+          <Dialog open={isAddDoctorOpen} onOpenChange={setIsAddDoctorOpen}>
+            <DialogTrigger asChild>
+              <Button className="hover-elevate shadow-lg"><Plus className="w-5 h-5 mr-2" /> Add Doctor Profile</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>New Doctor Profile</DialogTitle></DialogHeader>
+              <Form {...doctorForm}>
+                <form onSubmit={doctorForm.handleSubmit((d) => createDoctor.mutate(d))} className="space-y-4">
+                  <FormField control={doctorForm.control} name="name" render={({ field }) => (
+                    <FormItem><FormLabel>Doctor Name</FormLabel><FormControl><Input placeholder="Dr. John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormField control={doctorForm.control} name="specialization" render={({ field }) => (
+                    <FormItem><FormLabel>Specialization</FormLabel><FormControl><Input placeholder="Cardiology" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormField control={doctorForm.control} name="visitCharge" render={({ field }) => (
+                    <FormItem><FormLabel>Visit Charge ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormField control={doctorForm.control} name="userId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Link to User Account</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value.toString()}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {usersList?.filter(u => u.role === 'DOCTOR').map(u => (
+                            <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.email})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <Button type="submit" className="w-full" disabled={createDoctor.isPending}>Save Profile</Button>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="border-border/50 shadow-md">

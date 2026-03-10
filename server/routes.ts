@@ -25,10 +25,16 @@ export async function registerRoutes(
         password: hashedPassword,
       });
 
-      req.login(user, (err) => {
-        if (err) return res.status(500).json({ message: "Error logging in" });
+      // Only login if this is a first-time registration or if not already authenticated
+      if (!req.isAuthenticated()) {
+        req.login(user, (err) => {
+          if (err) return res.status(500).json({ message: "Error logging in" });
+          return res.status(201).json(user);
+        });
+      } else {
+        // If an admin/manager is creating a user, just return the user without logging them in
         return res.status(201).json(user);
-      });
+      }
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
