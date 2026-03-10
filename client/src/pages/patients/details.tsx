@@ -304,17 +304,21 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const chargeFormSchema = insertChargeSchema.extend({ patientId: z.coerce.number(), amount: z.coerce.number() });
+  const chargeFormSchema = insertChargeSchema.extend({ 
+    patientId: z.coerce.number(), 
+    amount: z.coerce.number(),
+    type: z.string().min(1, "Description is required")
+  });
   const form = useForm<z.infer<typeof chargeFormSchema>>({
     resolver: zodResolver(chargeFormSchema),
-    defaultValues: { type: "OTHER", amount: 0, patientId: patient.id }
+    defaultValues: { type: "", amount: 0, patientId: patient.id }
   });
 
   const onSubmit = (data: z.infer<typeof chargeFormSchema>) => {
     createCharge.mutate({ patientId: patient.id, type: data.type, amount: data.amount }, {
       onSuccess: () => {
         toast({ title: "Success", description: "Charge added successfully." });
-        form.reset({ type: "OTHER", amount: 0, patientId: patient.id });
+        form.reset({ type: "", amount: 0, patientId: patient.id });
         setOpen(false);
       },
       onError: (error: any) => {
@@ -352,14 +356,10 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField control={form.control} name="type" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Charge Type</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                        <SelectContent>
-                          <SelectItem value="NURSING">Nursing</SelectItem>
-                          <SelectItem value="OTHER">Other Service</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. Nursing, Physiotherapy, etc." {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
