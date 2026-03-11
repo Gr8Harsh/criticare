@@ -12,8 +12,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const userSchema = z.object({
   name: z.string().min(2),
@@ -31,7 +32,7 @@ const doctorSchema = z.object({
 
 export default function DoctorsList() {
   const { data: doctors, isLoading } = useDoctors();
-  const { data: user: currentUser } = useAuth();
+  const { data: currentUser } = useAuth();
   const [search, setSearch] = useState("");
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isAddDoctorOpen, setIsAddDoctorOpen] = useState(false);
