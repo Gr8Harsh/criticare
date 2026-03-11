@@ -235,7 +235,7 @@ export async function registerRoutes(
     res.json(doctorsList);
   });
 
-  app.post(api.doctors.create.path, async (req, res) => {
+  app.post(api.doctors.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.doctors.create.input.parse(req.body);
       const doctor = await storage.createDoctor(input);

@@ -105,11 +105,11 @@ export default function DoctorsList() {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-display font-bold tracking-tight">Staff Management</h1>
-          <p className="text-muted-foreground">Manage hospital medical and administrative staff.</p>
+          <h1 className="text-3xl font-display font-bold tracking-tight">{currentUser?.role === 'ADMIN' ? 'Staff Management' : 'Doctors'}</h1>
+          <p className="text-muted-foreground">{currentUser?.role === 'ADMIN' ? 'Manage hospital medical and administrative staff.' : 'View available doctors and their specializations.'}</p>
         </div>
-        <div className="flex gap-2">
-          {currentUser?.role === 'ADMIN' && (
+        {currentUser?.role === 'ADMIN' && (
+          <div className="flex gap-2">
             <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="hover-elevate shadow-sm"><Plus className="w-5 h-5 mr-2" /> Add User Account</Button>
@@ -145,44 +145,44 @@ export default function DoctorsList() {
                 </Form>
               </DialogContent>
             </Dialog>
-          )}
-          <Dialog open={isAddDoctorOpen} onOpenChange={setIsAddDoctorOpen}>
-            <DialogTrigger asChild>
-              <Button className="hover-elevate shadow-lg"><Plus className="w-5 h-5 mr-2" /> Add Doctor Profile</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>New Doctor Profile</DialogTitle></DialogHeader>
-              <Form {...doctorForm}>
-                <form onSubmit={doctorForm.handleSubmit((d) => createDoctor.mutate(d))} className="space-y-4">
-                  <FormField control={doctorForm.control} name="name" render={({ field }) => (
-                    <FormItem><FormLabel>Doctor Name</FormLabel><FormControl><Input placeholder="Dr. John Doe" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={doctorForm.control} name="specialization" render={({ field }) => (
-                    <FormItem><FormLabel>Specialization</FormLabel><FormControl><Input placeholder="Cardiology" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={doctorForm.control} name="visitCharge" render={({ field }) => (
-                    <FormItem><FormLabel>Visit Charge ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={doctorForm.control} name="userId" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Link to User Account</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value.toString()}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger></FormControl>
-                        <SelectContent>
-                          {usersList?.filter(u => u.role === 'DOCTOR').map(u => (
-                            <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.email})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <Button type="submit" className="w-full" disabled={createDoctor.isPending}>Save Profile</Button>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
-        </div>
+            <Dialog open={isAddDoctorOpen} onOpenChange={setIsAddDoctorOpen}>
+              <DialogTrigger asChild>
+                <Button className="hover-elevate shadow-lg"><Plus className="w-5 h-5 mr-2" /> Add Doctor Profile</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>New Doctor Profile</DialogTitle></DialogHeader>
+                <Form {...doctorForm}>
+                  <form onSubmit={doctorForm.handleSubmit((d) => createDoctor.mutate(d))} className="space-y-4">
+                    <FormField control={doctorForm.control} name="name" render={({ field }) => (
+                      <FormItem><FormLabel>Doctor Name</FormLabel><FormControl><Input placeholder="Dr. John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={doctorForm.control} name="specialization" render={({ field }) => (
+                      <FormItem><FormLabel>Specialization</FormLabel><FormControl><Input placeholder="Cardiology" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={doctorForm.control} name="visitCharge" render={({ field }) => (
+                      <FormItem><FormLabel>Visit Charge ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={doctorForm.control} name="userId" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Link to User Account</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value.toString()}>
+                          <FormControl><SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            {usersList?.filter(u => u.role === 'DOCTOR').map(u => (
+                              <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.email})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <Button type="submit" className="w-full" disabled={createDoctor.isPending}>Save Profile</Button>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
       </div>
 
       <Card className="border-border/50 shadow-md">
