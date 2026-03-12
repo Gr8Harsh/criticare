@@ -74,6 +74,7 @@ export const charges = pgTable("charges", {
   id: serial("id").primaryKey(),
   patientId: integer("patient_id").notNull(),
   type: text("type").notNull(), // 'ROOM', 'NURSING', 'OTHER'
+  description: text("description"),
   amount: integer("amount").notNull(),
   date: timestamp("date").defaultNow().notNull(),
 });
