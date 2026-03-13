@@ -319,21 +319,20 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const chargeFormSchema = insertChargeSchema.extend({ 
-    patientId: z.coerce.number(), 
-    amount: z.coerce.number(),
-    type: z.string().min(1, "Description is required")
+  const chargeFormSchema = z.object({ 
+    description: z.string().min(1, "Description is required"),
+    amount: z.coerce.number().min(1, "Amount must be greater than 0"),
   });
   const form = useForm<z.infer<typeof chargeFormSchema>>({
     resolver: zodResolver(chargeFormSchema),
-    defaultValues: { type: "", amount: 0, patientId: patient.id }
+    defaultValues: { description: "", amount: 0 }
   });
 
   const onSubmit = (data: z.infer<typeof chargeFormSchema>) => {
-    createCharge.mutate({ patientId: patient.id, type: data.type, amount: data.amount }, {
+    createCharge.mutate({ patientId: patient.id, type: "OTHER", description: data.description, amount: data.amount }, {
       onSuccess: () => {
         toast({ title: "Success", description: "Charge added successfully." });
-        form.reset({ type: "", amount: 0, patientId: patient.id });
+        form.reset({ description: "", amount: 0 });
         setOpen(false);
       },
       onError: (error: any) => {
@@ -369,7 +368,7 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
               </DialogHeader>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField control={form.control} name="type" render={({ field }) => (
+                  <FormField control={form.control} name="description" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
@@ -412,7 +411,7 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
               {charges.map((c: any) => (
                 <TableRow key={c.id}>
                   <TableCell>{format(new Date(c.date), "MMM dd, yyyy")}</TableCell>
-                  <TableCell>{c.type}</TableCell>
+                  <TableCell>{c.description || c.type}</TableCell>
                   <TableCell className="text-right font-medium">₹{c.amount}</TableCell>
                   <TableCell className="text-right">
                     {!patient.discharged && canManage && (
@@ -474,14 +473,18 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
                 <TableCell>Medicines & Pharmacy</TableCell>
                 <TableCell className="text-right">₹{bill.medicineCharges}</TableCell>
               </TableRow>
-              <TableRow>
-                <TableCell>Nursing Charges</TableCell>
-                <TableCell className="text-right">₹{bill.nursingCharges}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell>Other Services</TableCell>
-                <TableCell className="text-right">₹{bill.otherCharges}</TableCell>
-              </TableRow>
+              {bill.nursingCharges > 0 && (
+                <TableRow>
+                  <TableCell>Nursing Charges</TableCell>
+                  <TableCell className="text-right">₹{bill.nursingCharges}</TableCell>
+                </TableRow>
+              )}
+              {bill.charges?.filter((c: any) => c.type === "OTHER").map((c: any) => (
+                <TableRow key={c.id}>
+                  <TableCell>{c.description || "Other Charge"}</TableCell>
+                  <TableCell className="text-right">₹{c.amount}</TableCell>
+                </TableRow>
+              ))}
               <TableRow className="border-t-2 border-border font-bold text-lg">
                 <TableCell className="pt-4">Grand Total</TableCell>
                 <TableCell className="text-right pt-4 text-primary">₹{bill.grandTotal.toLocaleString()}</TableCell>
