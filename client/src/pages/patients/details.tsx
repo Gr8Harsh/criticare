@@ -35,7 +35,13 @@ export default function PatientDetails() {
   const { toast } = useToast();
 
   if (pLoading || bLoading) return <div className="flex p-20 justify-center"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>;
-  if (!patient || !bill) return <div>Patient not found</div>;
+  if (!patient || !bill) return (
+    <div className="flex flex-col items-center justify-center p-20 gap-4">
+      <p className="text-xl font-semibold text-foreground">Patient not found</p>
+      <p className="text-muted-foreground">This patient record does not exist or you don't have access.</p>
+      <Button asChild variant="outline"><Link href="/patients">Back to Patients</Link></Button>
+    </div>
+  );
 
   const handleDischarge = () => {
     if (confirm("Are you sure you want to discharge this patient? This action finalizes the bill.")) {

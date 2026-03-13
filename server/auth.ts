@@ -29,15 +29,16 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
+  const isProduction = process.env.NODE_ENV === "production";
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPLIT_ID || "ipd-secret",
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      secure: true,        // 🔥 REQUIRED FOR HTTPS DEPLOY
+      secure: isProduction,
       httpOnly: true,
-      sameSite: "none",    // 🔥 REQUIRED FOR CROSS-SITE COOKIES
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 1000 * 60 * 60 * 24 * 7
     }
   };

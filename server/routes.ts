@@ -253,13 +253,26 @@ export async function registerRoutes(
   });
 
   app.get(api.doctors.stats.path, async (req, res) => {
-    const doctorId = Number(req.params.id);
-    const visits = await storage.getVisitsByDoctor(doctorId);
+    const inputId = Number(req.params.id);
+    // The dashboard passes userId, so look up the doctor profile by userId first
+    const doctorByUser = await storage.getDoctorByUserId(inputId);
+    const doctorId = doctorByUser ? doctorByUser.id : inputId;
 
+    const visits = await storage.getVisitsByDoctor(doctorId);
     const visitCount = visits.length;
     const revenueGenerated = visits.reduce((acc, v) => acc + v.charge, 0);
 
     res.json({ visitCount, revenueGenerated });
+  });
+
+  app.get(api.doctors.assignedPatients.path, async (req, res) => {
+    const inputId = Number(req.params.id);
+    // The dashboard passes userId, so look up the doctor profile by userId first
+    const doctorByUser = await storage.getDoctorByUserId(inputId);
+    const doctorId = doctorByUser ? doctorByUser.id : inputId;
+
+    const doctorPatients = await storage.getDoctorPatients(doctorId);
+    res.json(doctorPatients);
   });
 
   app.get(api.medicines.list.path, async (req, res) => {

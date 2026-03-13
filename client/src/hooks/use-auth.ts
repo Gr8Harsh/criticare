@@ -31,8 +31,8 @@ export function useLogin() {
       }
       return api.auth.login.responses[200].parse(await res.json());
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.auth.me.path] });
+    onSuccess: (user) => {
+      queryClient.setQueryData([api.auth.me.path], user);
     },
   });
 }

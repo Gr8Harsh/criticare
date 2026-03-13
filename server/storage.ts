@@ -66,6 +66,10 @@ export class DatabaseStorage {
   async getDoctors(): Promise<Doctor[]> {
     return await db.select().from(doctors);
   }
+  async getDoctorByUserId(userId: number): Promise<Doctor | undefined> {
+    const [doctor] = await db.select().from(doctors).where(eq(doctors.userId, userId));
+    return doctor;
+  }
   async createDoctor(insertDoctor: InsertDoctor): Promise<Doctor> {
     const [doctor] = await db.insert(doctors).values(insertDoctor).returning();
     return doctor;
@@ -149,6 +153,16 @@ export class DatabaseStorage {
       }
     }
     return results;
+  }
+
+  async getDoctorPatients(doctorId: number): Promise<Patient[]> {
+    const pds = await db.select().from(patientDoctors).where(eq(patientDoctors.doctorId, doctorId));
+    const result: Patient[] = [];
+    for (const pd of pds) {
+      const [patient] = await db.select().from(patients).where(eq(patients.id, pd.patientId));
+      if (patient) result.push(patient);
+    }
+    return result;
   }
 
   async deleteCharge(id: number): Promise<void> {
