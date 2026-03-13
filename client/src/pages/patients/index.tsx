@@ -205,7 +205,7 @@ function AddPatientForm({ onSuccess }: { onSuccess: () => void }) {
                 <FormControl><SelectTrigger><SelectValue placeholder="Select room type" /></SelectTrigger></FormControl>
                 <SelectContent>
                   {roomTypes?.map(rt => (
-                    <SelectItem key={rt.id} value={rt.id.toString()}>{rt.name} (${rt.dailyCharge}/day)</SelectItem>
+                    <SelectItem key={rt.id} value={rt.id.toString()}>{rt.name} (₹{rt.dailyCharge}/day)</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

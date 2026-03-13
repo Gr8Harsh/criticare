@@ -215,7 +215,7 @@ export default function DoctorsList() {
                       <Stethoscope className="w-4 h-4 text-primary" /> Dr. {doc.name}
                     </TableCell>
                     <TableCell>{doc.specialization}</TableCell>
-                    <TableCell className="text-right font-medium">${doc.visitCharge}</TableCell>
+                    <TableCell className="text-right font-medium">₹{doc.visitCharge}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

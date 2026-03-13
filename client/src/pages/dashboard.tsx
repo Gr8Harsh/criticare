@@ -92,7 +92,7 @@ function ManagerDashboard({ isAdmin }: { isAdmin?: boolean }) {
         />
         <StatCard 
           title="Total Revenue" 
-          value={`$${data.totalRevenue.toLocaleString()}`} 
+          value={`₹${data.totalRevenue.toLocaleString()}`} 
           icon={DollarSign} 
           colorClass="bg-violet-100 text-violet-600 dark:bg-violet-900/50 dark:text-violet-400" 
         />
@@ -126,7 +126,7 @@ function ManagerDashboard({ isAdmin }: { isAdmin?: boolean }) {
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
+                  <Tooltip formatter={(value: number) => `₹${value.toLocaleString()}`} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -162,7 +162,7 @@ function DoctorDashboard({ userId }: { userId: number }) {
         />
         <StatCard 
           title="Revenue Generated" 
-          value={`$${(stats?.revenueGenerated || 0).toLocaleString()}`} 
+          value={`₹${(stats?.revenueGenerated || 0).toLocaleString()}`} 
           icon={DollarSign} 
           colorClass="bg-emerald-100 text-emerald-600" 
         />

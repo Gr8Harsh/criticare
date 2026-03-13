@@ -115,15 +115,15 @@ export default function PatientDetails() {
             </div>
             <div className="flex justify-between items-center pb-3 border-b border-border/50">
               <span className="text-muted-foreground">Total Services</span>
-              <span className="font-bold">${(bill.doctorCharges + bill.nursingCharges + bill.otherCharges).toLocaleString()}</span>
+              <span className="font-bold">₹{(bill.doctorCharges + bill.nursingCharges + bill.otherCharges).toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center pb-3 border-b border-border/50">
               <span className="text-muted-foreground">Medicines</span>
-              <span className="font-bold">${bill.medicineCharges.toLocaleString()}</span>
+              <span className="font-bold">₹{bill.medicineCharges.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center pt-2">
               <span className="text-lg font-display text-primary">Grand Total</span>
-              <span className="text-2xl font-bold text-primary">${bill.grandTotal.toLocaleString()}</span>
+              <span className="text-2xl font-bold text-primary">₹{bill.grandTotal.toLocaleString()}</span>
             </div>
           </CardContent>
         </Card>
@@ -212,7 +212,7 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
                       </FormItem>
                     )} />
                     <FormField control={visitForm.control} name="charge" render={({ field }) => (
-                      <FormItem><FormLabel>Charge ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl></FormItem>
+                      <FormItem><FormLabel>Charge (₹)</FormLabel><FormControl><Input type="number" {...field} /></FormControl></FormItem>
                     )} />
                     <Button type="submit" className="w-full" disabled={createVisit.isPending}>Save Visit</Button>
                   </form>
@@ -230,7 +230,7 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
               <TableRow key={v.id}>
                 <TableCell>{format(new Date(v.date), "MMM dd, yyyy HH:mm")}</TableCell>
                 <TableCell>Dr. {doctors?.find(d => d.id === v.doctorId)?.name || 'Unknown'}</TableCell>
-                <TableCell className="text-right font-medium">${v.charge}</TableCell>
+                <TableCell className="text-right font-medium">₹{v.charge}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -277,7 +277,7 @@ function MedicinesTab({ patient, prescriptions, isManager }: { patient: any, pre
                       <FormLabel>Medicine</FormLabel>
                       <Select onValueChange={field.onChange}>
                         <FormControl><SelectTrigger><SelectValue placeholder="Select Medicine" /></SelectTrigger></FormControl>
-                        <SelectContent>{medicines?.map(m => <SelectItem key={m.id} value={m.id.toString()}>{m.name} (${m.unitCost})</SelectItem>)}</SelectContent>
+                        <SelectContent>{medicines?.map(m => <SelectItem key={m.id} value={m.id.toString()}>{m.name} (₹{m.unitCost})</SelectItem>)}</SelectContent>
                       </Select>
                     </FormItem>
                   )} />
@@ -300,7 +300,7 @@ function MedicinesTab({ patient, prescriptions, isManager }: { patient: any, pre
                 <TableCell>{format(new Date(p.date), "MMM dd, yyyy")}</TableCell>
                 <TableCell>{medicines?.find(m => m.id === p.medicineId)?.name || 'Unknown'}</TableCell>
                 <TableCell>{p.quantity}</TableCell>
-                <TableCell className="text-right font-medium">${p.totalCost}</TableCell>
+                <TableCell className="text-right font-medium">₹{p.totalCost}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -380,7 +380,7 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
                   )} />
                   <FormField control={form.control} name="amount" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Amount ($)</FormLabel>
+                      <FormLabel>Amount (₹)</FormLabel>
                       <FormControl>
                         <Input type="number" min="0" step="0.01" placeholder="0.00" {...field} />
                       </FormControl>
@@ -413,7 +413,7 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
                 <TableRow key={c.id}>
                   <TableCell>{format(new Date(c.date), "MMM dd, yyyy")}</TableCell>
                   <TableCell>{c.type}</TableCell>
-                  <TableCell className="text-right font-medium">${c.amount}</TableCell>
+                  <TableCell className="text-right font-medium">₹{c.amount}</TableCell>
                   <TableCell className="text-right">
                     {!patient.discharged && canManage && (
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)} className="text-destructive hover:bg-destructive/10" data-testid={`button-delete-charge-${c.id}`}>
@@ -464,27 +464,27 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
             <TableBody>
               <TableRow>
                 <TableCell>Room Charges ({bill.daysAdmitted} days)</TableCell>
-                <TableCell className="text-right">${bill.roomCharge}</TableCell>
+                <TableCell className="text-right">₹{bill.roomCharge}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>Doctor Visits ({bill.visits.length})</TableCell>
-                <TableCell className="text-right">${bill.doctorCharges}</TableCell>
+                <TableCell className="text-right">₹{bill.doctorCharges}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>Medicines & Pharmacy</TableCell>
-                <TableCell className="text-right">${bill.medicineCharges}</TableCell>
+                <TableCell className="text-right">₹{bill.medicineCharges}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>Nursing Charges</TableCell>
-                <TableCell className="text-right">${bill.nursingCharges}</TableCell>
+                <TableCell className="text-right">₹{bill.nursingCharges}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>Other Services</TableCell>
-                <TableCell className="text-right">${bill.otherCharges}</TableCell>
+                <TableCell className="text-right">₹{bill.otherCharges}</TableCell>
               </TableRow>
               <TableRow className="border-t-2 border-border font-bold text-lg">
                 <TableCell className="pt-4">Grand Total</TableCell>
-                <TableCell className="text-right pt-4 text-primary">${bill.grandTotal.toLocaleString()}</TableCell>
+                <TableCell className="text-right pt-4 text-primary">₹{bill.grandTotal.toLocaleString()}</TableCell>
               </TableRow>
             </TableBody>
           </Table>

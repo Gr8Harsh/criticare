@@ -84,7 +84,7 @@ export default function RoomTypesPage() {
                           </form>
                         </Form>
                       ) : (
-                        `$${rt.dailyCharge.toLocaleString()}`
+                        `₹${rt.dailyCharge.toLocaleString()}`
                       )}
                     </TableCell>
                     <TableCell className="text-right">

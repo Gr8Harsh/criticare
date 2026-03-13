@@ -89,7 +89,7 @@ export default function MedicinesList() {
                     <TableCell className="font-bold flex items-center gap-2">
                       <Pill className="w-4 h-4 text-primary" /> {med.name}
                     </TableCell>
-                    <TableCell className="text-right font-medium">${med.unitCost}</TableCell>
+                    <TableCell className="text-right font-medium">₹{med.unitCost}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
