@@ -56,7 +56,11 @@ export async function registerRoutes(
 
         req.login(user, (err) => {
           if (err) return next(err);
-          return res.json(user);
+          // Ensure session is saved before responding
+          req.session.save((saveErr) => {
+            if (saveErr) return next(saveErr);
+            return res.json(user);
+          });
         });
       })(req, res, next),
     );

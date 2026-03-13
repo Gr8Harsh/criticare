@@ -92,19 +92,41 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Seed Admin user if not exists
+  // Seed demo users if not exists
   (async () => {
-    const adminEmail = "admin@test.com";
-    const existingAdmin = await storage.getUserByEmail(adminEmail);
-    if (!existingAdmin) {
-      const hashed = await hashPassword("admin123");
-      await storage.createUser({
+    const demoUsers = [
+      {
+        email: "admin@test.com",
         name: "Hospital Admin",
-        email: adminEmail,
-        password: hashed,
+        password: "admin123",
         role: "ADMIN"
-      });
-      console.log("ADMIN USER CREATED: admin@test.com / admin123");
+      },
+      {
+        email: "manager@test.com",
+        name: "Hospital Manager",
+        password: "password123",
+        role: "MANAGER"
+      },
+      {
+        email: "doctor@test.com",
+        name: "Dr. John Smith",
+        password: "password123",
+        role: "DOCTOR"
+      }
+    ];
+
+    for (const user of demoUsers) {
+      const existing = await storage.getUserByEmail(user.email);
+      if (!existing) {
+        const hashed = await hashPassword(user.password);
+        await storage.createUser({
+          name: user.name,
+          email: user.email,
+          password: hashed,
+          role: user.role
+        });
+        console.log(`USER CREATED: ${user.email} / ${user.password}`);
+      }
     }
   })();
 
