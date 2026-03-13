@@ -4,6 +4,9 @@ import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { db } from "./db";
+import { users, roomTypes } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export async function registerRoutes(
   httpServer: Server,
