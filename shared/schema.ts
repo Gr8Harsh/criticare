@@ -88,6 +88,13 @@ export const procedures = pgTable("procedures", {
   date: timestamp("date").defaultNow().notNull(),
 });
 
+export const procedureCatalog = pgTable("procedure_catalog", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  cost: integer("cost").notNull(),
+});
+
 export const doctorRoomCharges = pgTable("doctor_room_charges", {
   id: serial("id").primaryKey(),
   doctorId: integer("doctor_id").notNull(),
@@ -105,6 +112,7 @@ export const insertVisitSchema = createInsertSchema(visits).omit({ id: true, dat
 export const insertPrescriptionSchema = createInsertSchema(prescriptions).omit({ id: true, date: true });
 export const insertChargeSchema = createInsertSchema(charges).omit({ id: true, date: true });
 export const insertProcedureSchema = createInsertSchema(procedures).omit({ id: true, date: true });
+export const insertProcedureCatalogSchema = createInsertSchema(procedureCatalog).omit({ id: true });
 export const insertDoctorRoomChargeSchema = createInsertSchema(doctorRoomCharges).omit({ id: true });
 
 // Types
@@ -118,6 +126,7 @@ export type Visit = typeof visits.$inferSelect;
 export type Prescription = typeof prescriptions.$inferSelect;
 export type Charge = typeof charges.$inferSelect;
 export type Procedure = typeof procedures.$inferSelect;
+export type ProcedureCatalog = typeof procedureCatalog.$inferSelect;
 export type DoctorRoomCharge = typeof doctorRoomCharges.$inferSelect;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -130,4 +139,5 @@ export type InsertVisit = z.infer<typeof insertVisitSchema>;
 export type InsertPrescription = z.infer<typeof insertPrescriptionSchema>;
 export type InsertCharge = z.infer<typeof insertChargeSchema>;
 export type InsertProcedure = z.infer<typeof insertProcedureSchema>;
+export type InsertProcedureCatalog = z.infer<typeof insertProcedureCatalogSchema>;
 export type InsertDoctorRoomCharge = z.infer<typeof insertDoctorRoomChargeSchema>;

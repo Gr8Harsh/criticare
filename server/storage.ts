@@ -1,11 +1,11 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, doctorRoomCharges,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
-  type Procedure, type InsertProcedure, type DoctorRoomCharge
+  type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge
 } from "@shared/schema";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
@@ -168,6 +168,22 @@ export class DatabaseStorage {
 
   async deleteCharge(id: number): Promise<void> {
     await db.delete(charges).where(eq(charges.id, id));
+  }
+
+  // Procedure Catalog
+  async getProcedureCatalog(): Promise<ProcedureCatalog[]> {
+    return await db.select().from(procedureCatalog);
+  }
+  async createProcedureCatalogItem(data: InsertProcedureCatalog): Promise<ProcedureCatalog> {
+    const [item] = await db.insert(procedureCatalog).values(data).returning();
+    return item;
+  }
+  async updateProcedureCatalogItem(id: number, data: Partial<InsertProcedureCatalog>): Promise<ProcedureCatalog> {
+    const [item] = await db.update(procedureCatalog).set(data).where(eq(procedureCatalog.id, id)).returning();
+    return item;
+  }
+  async deleteProcedureCatalogItem(id: number): Promise<void> {
+    await db.delete(procedureCatalog).where(eq(procedureCatalog.id, id));
   }
 
   // Doctor Room Charges

@@ -389,6 +389,45 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // Procedure Catalog (master list)
+  app.get("/api/procedure-catalog", async (req, res) => {
+    const catalog = await storage.getProcedureCatalog();
+    res.json(catalog);
+  });
+
+  app.post("/api/procedure-catalog", async (req, res) => {
+    try {
+      const { name, description, cost } = z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        cost: z.coerce.number().min(0),
+      }).parse(req.body);
+      const item = await storage.createProcedureCatalogItem({ name, description, cost });
+      res.status(201).json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.put("/api/procedure-catalog/:id", async (req, res) => {
+    try {
+      const { name, description, cost } = z.object({
+        name: z.string().min(1).optional(),
+        description: z.string().optional(),
+        cost: z.coerce.number().min(0).optional(),
+      }).parse(req.body);
+      const item = await storage.updateProcedureCatalogItem(Number(req.params.id), { name, description, cost });
+      res.json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete("/api/procedure-catalog/:id", async (req, res) => {
+    await storage.deleteProcedureCatalogItem(Number(req.params.id));
+    res.sendStatus(204);
+  });
+
   app.get(api.dashboard.overview.path, async (req, res) => {
     const patientsList = await storage.getPatients();
     const doctorsList = await storage.getDoctors();

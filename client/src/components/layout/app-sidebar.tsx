@@ -3,7 +3,7 @@ import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, 
   SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem 
 } from "@/components/ui/sidebar";
-import { Activity, LayoutDashboard, Users, UserRound, Pill, DoorOpen, LogOut } from "lucide-react";
+import { Activity, LayoutDashboard, Users, UserRound, Pill, DoorOpen, LogOut, Stethoscope } from "lucide-react";
 import { useAuth, useLogout } from "@/hooks/use-auth";
 import logoImg from "@assets/Adobe_Express_-_file_1772173054491.png";
 
@@ -21,6 +21,7 @@ export function AppSidebar() {
     { title: "Patients", url: "/patients", icon: Users, show: isManager || isDoctor },
     { title: "Doctors", url: "/doctors", icon: UserRound, show: isManager },
     { title: "Medicines", url: "/medicines", icon: Pill, show: isManager },
+    { title: "Procedures", url: "/procedures", icon: Stethoscope, show: isManager },
     { title: "Room Configuration", url: "/room-types", icon: DoorOpen, show: isAdmin },
   ];
 
