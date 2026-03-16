@@ -1,11 +1,11 @@
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, doctorRoomCharges,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
-  type Procedure, type InsertProcedure
+  type Procedure, type InsertProcedure, type DoctorRoomCharge
 } from "@shared/schema";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
@@ -168,6 +168,30 @@ export class DatabaseStorage {
 
   async deleteCharge(id: number): Promise<void> {
     await db.delete(charges).where(eq(charges.id, id));
+  }
+
+  // Doctor Room Charges
+  async getDoctorRoomCharges(doctorId: number): Promise<DoctorRoomCharge[]> {
+    return await db.select().from(doctorRoomCharges).where(eq(doctorRoomCharges.doctorId, doctorId));
+  }
+  async getDoctorRoomCharge(doctorId: number, roomTypeId: number): Promise<DoctorRoomCharge | undefined> {
+    const [row] = await db.select().from(doctorRoomCharges).where(
+      and(eq(doctorRoomCharges.doctorId, doctorId), eq(doctorRoomCharges.roomTypeId, roomTypeId))
+    );
+    return row;
+  }
+  async upsertDoctorRoomCharge(doctorId: number, roomTypeId: number, charge: number): Promise<DoctorRoomCharge> {
+    const existing = await this.getDoctorRoomCharge(doctorId, roomTypeId);
+    if (existing) {
+      const [updated] = await db.update(doctorRoomCharges)
+        .set({ charge })
+        .where(and(eq(doctorRoomCharges.doctorId, doctorId), eq(doctorRoomCharges.roomTypeId, roomTypeId)))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(doctorRoomCharges).values({ doctorId, roomTypeId, charge }).returning();
+      return created;
+    }
   }
 
   // Procedures

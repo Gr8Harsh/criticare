@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Plus, Search, Stethoscope } from "lucide-react";
+import { Loader2, Plus, Search, Stethoscope, Settings2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -29,6 +29,124 @@ const doctorSchema = z.object({
   visitCharge: z.coerce.number().min(0),
   userId: z.coerce.number().min(1, "Select a User account"),
 });
+
+function RoomChargesDialog({ doctor }: { doctor: any }) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: roomTypes } = useQuery<any[]>({ queryKey: [api.roomTypes.list.path] });
+  const { data: roomCharges, isLoading } = useQuery<any[]>({
+    queryKey: [`/api/doctors/${doctor.id}/room-charges`],
+    enabled: open,
+  });
+
+  const upsertCharge = useMutation({
+    mutationFn: async ({ roomTypeId, charge }: { roomTypeId: number; charge: number }) => {
+      const res = await fetch(`/api/doctors/${doctor.id}/room-charges`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomTypeId, charge }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to save charge");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/doctors/${doctor.id}/room-charges`] });
+      toast({ title: "Saved", description: "Room charge updated." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to save.", variant: "destructive" }),
+  });
+
+  const getCharge = (roomTypeId: number) =>
+    roomCharges?.find((rc) => rc.roomTypeId === roomTypeId)?.charge ?? "";
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="hover-elevate"
+          data-testid={`button-room-charges-${doctor.id}`}
+        >
+          <Settings2 className="w-4 h-4 mr-1" /> Room Charges
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle className="font-display">
+            Room-wise Visit Charges — Dr. {doctor.name}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground -mt-2 mb-1">
+          Set a different visit charge for each room type. Leave blank to use the default charge (₹{doctor.visitCharge}).
+        </p>
+        {isLoading ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin" /></div>
+        ) : (
+          <div className="space-y-3">
+            {roomTypes?.map((rt) => (
+              <RoomChargeRow
+                key={rt.id}
+                roomType={rt}
+                currentCharge={getCharge(rt.id)}
+                onSave={(charge) => upsertCharge.mutate({ roomTypeId: rt.id, charge })}
+                isPending={upsertCharge.isPending}
+              />
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RoomChargeRow({ roomType, currentCharge, onSave, isPending }: {
+  roomType: any;
+  currentCharge: number | string;
+  onSave: (charge: number) => void;
+  isPending: boolean;
+}) {
+  const [value, setValue] = useState(currentCharge.toString());
+
+  const handleSave = () => {
+    const num = parseInt(value);
+    if (!isNaN(num) && num >= 0) onSave(num);
+  };
+
+  return (
+    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+      <div className="flex-1">
+        <div className="font-medium text-sm">{roomType.name}</div>
+        <div className="text-xs text-muted-foreground">Room rate: ₹{roomType.dailyCharge}/day</div>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground text-sm">₹</span>
+        <Input
+          type="number"
+          min="0"
+          className="w-28 h-8 text-sm"
+          placeholder={`default`}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          data-testid={`input-room-charge-${roomType.id}`}
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-8 px-3"
+          onClick={handleSave}
+          disabled={isPending}
+          data-testid={`button-save-room-charge-${roomType.id}`}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function DoctorsList() {
   const { data: doctors, isLoading } = useDoctors();
@@ -160,7 +278,12 @@ export default function DoctorsList() {
                       <FormItem><FormLabel>Specialization</FormLabel><FormControl><Input placeholder="Cardiology" {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={doctorForm.control} name="visitCharge" render={({ field }) => (
-                      <FormItem><FormLabel>Visit Charge ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormItem>
+                        <FormLabel>Default Visit Charge (₹)</FormLabel>
+                        <FormControl><Input type="number" {...field} /></FormControl>
+                        <FormMessage />
+                        <p className="text-xs text-muted-foreground">Used when no room-specific charge is set.</p>
+                      </FormItem>
                     )} />
                     <FormField control={doctorForm.control} name="userId" render={({ field }) => (
                       <FormItem>
@@ -205,17 +328,23 @@ export default function DoctorsList() {
                 <TableRow>
                   <TableHead>Doctor Name</TableHead>
                   <TableHead>Specialization</TableHead>
-                  <TableHead className="text-right">Visit Charge</TableHead>
+                  <TableHead className="text-right">Default Visit Charge</TableHead>
+                  <TableHead className="text-right">Room Charges</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredDoctors?.map((doc) => (
-                  <TableRow key={doc.id}>
+                  <TableRow key={doc.id} data-testid={`row-doctor-${doc.id}`}>
                     <TableCell className="font-bold flex items-center gap-2">
                       <Stethoscope className="w-4 h-4 text-primary" /> Dr. {doc.name}
                     </TableCell>
                     <TableCell>{doc.specialization}</TableCell>
                     <TableCell className="text-right font-medium">₹{doc.visitCharge}</TableCell>
+                    <TableCell className="text-right">
+                      {(currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER') && (
+                        <RoomChargesDialog doctor={doc} />
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

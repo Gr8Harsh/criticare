@@ -20,8 +20,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useState } from "react";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { insertChargeSchema } from "@shared/schema";
 import { api } from "@shared/routes";
 
@@ -177,16 +177,39 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
   const isAdmin = user?.role === 'ADMIN';
   const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
   const { data: doctors } = useDoctors();
   const createVisit = useCreateVisit();
   const assignDoctor = useAssignDoctor();
+
+  const { data: doctorRoomCharges } = useQuery<any[]>({
+    queryKey: [`/api/doctors/${selectedDoctorId}/room-charges`],
+    enabled: selectedDoctorId !== null,
+  });
 
   const visitForm = useForm({ defaultValues: { doctorId: "", charge: "" }});
   
   const onSubmit = (data: any) => {
     createVisit.mutate({ patientId: patient.id, doctorId: parseInt(data.doctorId), charge: parseInt(data.charge) }, {
-      onSuccess: () => setOpen(false)
+      onSuccess: () => { setOpen(false); setSelectedDoctorId(null); }
     });
+  };
+
+  useEffect(() => {
+    if (selectedDoctorId && doctorRoomCharges !== undefined) {
+      const doc = doctors?.find(d => d.id === selectedDoctorId);
+      if (!doc) return;
+      const roomSpecificCharge = doctorRoomCharges.find(rc => rc.roomTypeId === patient.roomTypeId)?.charge;
+      visitForm.setValue("charge", (roomSpecificCharge ?? doc.visitCharge).toString());
+    }
+  }, [doctorRoomCharges, selectedDoctorId]);
+
+  const handleDoctorChange = (val: string) => {
+    const docId = parseInt(val);
+    setSelectedDoctorId(docId);
+    const doc = doctors?.find(d => d.id === docId);
+    if (!doc) return;
+    visitForm.setValue("charge", doc.visitCharge.toString());
   };
 
   const handleAssignDoctor = (doctorId: number) => {
@@ -205,7 +228,7 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
                 <SelectContent>{doctors.map(d => <SelectItem key={d.id} value={d.id.toString()}>{d.name} ({d.specialization})</SelectItem>)}</SelectContent>
               </Select>
             )}
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSelectedDoctorId(null); }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="hover-elevate"><Plus className="w-4 h-4 mr-2" /> Add Visit</Button>
               </DialogTrigger>
@@ -216,18 +239,20 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
                     <FormField control={visitForm.control} name="doctorId" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Doctor</FormLabel>
-                        <Select onValueChange={(val) => {
-                          field.onChange(val);
-                          const doc = doctors?.find(d => d.id.toString() === val);
-                          if(doc) visitForm.setValue("charge", doc.visitCharge.toString());
-                        }}>
+                        <Select onValueChange={(val) => { field.onChange(val); handleDoctorChange(val); }}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select Doctor" /></SelectTrigger></FormControl>
                           <SelectContent>{doctors?.map(d => <SelectItem key={d.id} value={d.id.toString()}>Dr. {d.name}</SelectItem>)}</SelectContent>
                         </Select>
                       </FormItem>
                     )} />
                     <FormField control={visitForm.control} name="charge" render={({ field }) => (
-                      <FormItem><FormLabel>Charge (₹)</FormLabel><FormControl><Input type="number" {...field} /></FormControl></FormItem>
+                      <FormItem>
+                        <FormLabel>Charge (₹)</FormLabel>
+                        <FormControl><Input type="number" {...field} /></FormControl>
+                        {selectedDoctorId && doctorRoomCharges?.find(rc => rc.roomTypeId === patient.roomTypeId) && (
+                          <p className="text-xs text-muted-foreground">Auto-filled from room-type charge for this patient's room.</p>
+                        )}
+                      </FormItem>
                     )} />
                     <Button type="submit" className="w-full" disabled={createVisit.isPending}>Save Visit</Button>
                   </form>
