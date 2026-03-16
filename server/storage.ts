@@ -1,10 +1,11 @@
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
-  type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge
+  type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
+  type Procedure, type InsertProcedure
 } from "@shared/schema";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
@@ -167,6 +168,18 @@ export class DatabaseStorage {
 
   async deleteCharge(id: number): Promise<void> {
     await db.delete(charges).where(eq(charges.id, id));
+  }
+
+  // Procedures
+  async createProcedure(insertProcedure: InsertProcedure): Promise<Procedure> {
+    const [procedure] = await db.insert(procedures).values(insertProcedure).returning();
+    return procedure;
+  }
+  async getProceduresByPatient(patientId: number): Promise<Procedure[]> {
+    return await db.select().from(procedures).where(eq(procedures.patientId, patientId));
+  }
+  async deleteProcedure(id: number): Promise<void> {
+    await db.delete(procedures).where(eq(procedures.id, id));
   }
 }
 

@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { 
   insertUserSchema, insertRoomTypeSchema, insertPatientSchema, 
   insertDoctorSchema, insertPatientDoctorSchema, insertMedicineSchema, 
-  insertVisitSchema, insertPrescriptionSchema, insertChargeSchema,
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges
+  insertVisitSchema, insertPrescriptionSchema, insertChargeSchema, insertProcedureSchema,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures
 } from './schema';
 
 export const errorSchemas = {
@@ -252,6 +252,16 @@ export const api = {
       input: insertChargeSchema.extend({ patientId: z.coerce.number(), amount: z.coerce.number() }),
       responses: {
         201: z.custom<typeof charges.$inferSelect>(),
+      }
+    }
+  },
+  procedures: {
+    create: {
+      method: 'POST' as const,
+      path: '/api/procedures' as const,
+      input: insertProcedureSchema.extend({ patientId: z.coerce.number(), cost: z.coerce.number() }),
+      responses: {
+        201: z.custom<typeof procedures.$inferSelect>(),
       }
     }
   }

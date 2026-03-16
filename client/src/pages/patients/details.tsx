@@ -14,14 +14,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { insertChargeSchema } from "@shared/schema";
 import { api } from "@shared/routes";
 
@@ -125,6 +125,10 @@ export default function PatientDetails() {
               <span className="font-bold">₹{(bill.doctorCharges + bill.nursingCharges + bill.otherCharges).toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center pb-3 border-b border-border/50">
+              <span className="text-muted-foreground">Procedures</span>
+              <span className="font-bold">₹{((bill as any).procedureCharges ?? 0).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center pb-3 border-b border-border/50">
               <span className="text-muted-foreground">Medicines</span>
               <span className="font-bold">₹{bill.medicineCharges.toLocaleString()}</span>
             </div>
@@ -140,6 +144,7 @@ export default function PatientDetails() {
         <TabsList className="bg-secondary/50 p-1 rounded-xl">
           <TabsTrigger value="visits" className="rounded-lg px-6"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
           <TabsTrigger value="medicines" className="rounded-lg px-6"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
+          <TabsTrigger value="procedures" className="rounded-lg px-6"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
           <TabsTrigger value="charges" className="rounded-lg px-6"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
           <TabsTrigger value="bill" className="rounded-lg px-6"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
         </TabsList>
@@ -147,6 +152,7 @@ export default function PatientDetails() {
         <div className="mt-6">
           <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
+          <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={(bill as any).procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
         </div>
@@ -425,6 +431,145 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
                   <TableCell className="text-right">
                     {!patient.discharged && canManage && (
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)} className="text-destructive hover:bg-destructive/10" data-testid={`button-delete-charge-${c.id}`}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProceduresTab({ patient, procedures, isManager }: { patient: any, procedures: any[], isManager: boolean }) {
+  const { data: user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const canManage = isManager || isAdmin;
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const schema = z.object({
+    name: z.string().min(1, "Procedure name is required"),
+    description: z.string().optional(),
+    cost: z.coerce.number().min(1, "Cost must be greater than 0"),
+  });
+  const form = useForm<z.infer<typeof schema>>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: "", description: "", cost: 0 },
+  });
+
+  const createProcedure = useMutation({
+    mutationFn: async (data: z.infer<typeof schema>) => {
+      const res = await fetch("/api/procedures", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, patientId: patient.id }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to add procedure");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Procedure added successfully." });
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      form.reset({ name: "", description: "", cost: 0 });
+      setOpen(false);
+    },
+    onError: () => toast({ title: "Error", description: "Failed to add procedure.", variant: "destructive" }),
+  });
+
+  const handleDelete = async (id: number) => {
+    if (confirm("Remove this procedure?")) {
+      const res = await fetch(`/api/procedures/${id}`, { method: "DELETE", credentials: "include" });
+      if (res.ok) {
+        toast({ title: "Success", description: "Procedure removed." });
+        queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      } else {
+        toast({ title: "Error", description: "Failed to remove procedure.", variant: "destructive" });
+      }
+    }
+  };
+
+  return (
+    <Card className="border-border/50 shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="font-display">Procedures</CardTitle>
+        {!patient.discharged && canManage && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90" data-testid="button-add-procedure">
+                <Plus className="w-4 h-4 mr-2" /> Add Procedure
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle className="font-display">Add Procedure</DialogTitle>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit((d) => createProcedure.mutate(d))} className="space-y-4">
+                  <FormField control={form.control} name="name" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Procedure Name</FormLabel>
+                      <FormControl><Input data-testid="input-procedure-name" placeholder="e.g. Appendectomy, MRI Scan, X-Ray" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="description" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description (optional)</FormLabel>
+                      <FormControl><Input data-testid="input-procedure-description" placeholder="Additional details..." {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="cost" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cost (₹)</FormLabel>
+                      <FormControl><Input type="number" min="0" data-testid="input-procedure-cost" placeholder="0" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <div className="flex gap-2">
+                    <Button type="submit" className="flex-1 bg-primary hover:bg-primary/90" disabled={createProcedure.isPending} data-testid="button-save-procedure">
+                      {createProcedure.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Save
+                    </Button>
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </CardHeader>
+      <CardContent>
+        {procedures.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No procedures recorded</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Procedure</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+                <TableHead className="w-[50px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {procedures.map((p: any) => (
+                <TableRow key={p.id} data-testid={`row-procedure-${p.id}`}>
+                  <TableCell>{format(new Date(p.date), "MMM dd, yyyy")}</TableCell>
+                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{p.description || "—"}</TableCell>
+                  <TableCell className="text-right font-medium">₹{p.cost.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">
+                    {!patient.discharged && canManage && (
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="text-destructive hover:bg-destructive/10" data-testid={`button-delete-procedure-${p.id}`}>
                         <X className="w-4 h-4" />
                       </Button>
                     )}

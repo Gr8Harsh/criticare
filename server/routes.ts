@@ -180,6 +180,7 @@ export async function registerRoutes(
     const visits = await storage.getVisitsByPatient(patientId);
     const prescriptions = await storage.getPrescriptionsByPatient(patientId);
     const chargesList = await storage.getChargesByPatient(patientId);
+    const proceduresList = await storage.getProceduresByPatient(patientId);
 
     const doctorCharges = visits.reduce((acc, v) => acc + v.charge, 0);
     const medicineCharges = prescriptions.reduce(
@@ -218,12 +219,15 @@ export async function registerRoutes(
       }
     }
 
+    const procedureCharges = proceduresList.reduce((acc, p) => acc + p.cost, 0);
+
     const grandTotal =
       roomCharge +
       doctorCharges +
       medicineCharges +
       nursingCharges +
-      otherCharges;
+      otherCharges +
+      procedureCharges;
 
     res.json({
       daysAdmitted,
@@ -232,10 +236,12 @@ export async function registerRoutes(
       medicineCharges,
       nursingCharges,
       otherCharges,
+      procedureCharges,
       grandTotal,
       visits,
       prescriptions,
       charges: chargesList,
+      procedures: proceduresList,
       patient,
     });
   });
@@ -346,6 +352,21 @@ export async function registerRoutes(
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
     }
+  });
+
+  app.post(api.procedures.create.path, async (req, res) => {
+    try {
+      const input = api.procedures.create.input.parse(req.body);
+      const p = await storage.createProcedure(input);
+      res.status(201).json(p);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete("/api/procedures/:id", async (req, res) => {
+    await storage.deleteProcedure(Number(req.params.id));
+    res.sendStatus(204);
   });
 
   app.get(api.dashboard.overview.path, async (req, res) => {
