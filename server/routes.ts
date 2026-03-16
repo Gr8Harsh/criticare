@@ -150,6 +150,19 @@ export async function registerRoutes(
     res.json(patient);
   });
 
+  app.put(api.patients.update.path, async (req, res) => {
+    try {
+      const input = api.patients.update.input.parse(req.body);
+      const patient = await storage.updatePatient(Number(req.params.id), input);
+      if (!patient) return res.status(404).json({ message: "Patient not found" });
+      res.json(patient);
+    } catch (err) {
+      if (err instanceof z.ZodError)
+        return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.post(api.patients.discharge.path, async (req, res) => {
     const patient = await storage.updatePatient(Number(req.params.id), {
       discharged: true,

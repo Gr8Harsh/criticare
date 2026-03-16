@@ -59,6 +59,29 @@ export function useCreatePatient() {
   });
 }
 
+type UpdatePatientInput = z.infer<typeof api.patients.update.input>;
+export function useUpdatePatient(id: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: UpdatePatientInput) => {
+      const url = buildUrl(api.patients.update.path, { id });
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update patient");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, id] });
+    },
+  });
+}
+
 export function useDischargePatient() {
   const queryClient = useQueryClient();
   return useMutation({

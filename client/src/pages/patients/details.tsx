@@ -1,8 +1,9 @@
 import { useParams, Link } from "wouter";
-import { usePatient, usePatientBill, useDischargePatient, useAssignDoctor, useAssignedDoctors } from "@/hooks/use-patients";
+import { usePatient, usePatientBill, useDischargePatient, useAssignDoctor, useAssignedDoctors, useUpdatePatient } from "@/hooks/use-patients";
 import { useCreateVisit, useCreatePrescription, useCreateCharge } from "@/hooks/use-billing";
 import { useDoctors } from "@/hooks/use-doctors";
 import { useMedicines } from "@/hooks/use-medicines";
+import { useRoomTypes } from "@/hooks/use-room-types";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -33,6 +34,7 @@ export default function PatientDetails() {
   const { data: assignedDoctors } = useAssignedDoctors(id);
   const dischargeMutation = useDischargePatient();
   const { toast } = useToast();
+  const [editOpen, setEditOpen] = useState(false);
 
   if (pLoading || bLoading) return <div className="flex p-20 justify-center"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>;
   if (!patient || !bill) return (
@@ -83,9 +85,14 @@ export default function PatientDetails() {
               </div>
               <div className="flex gap-2 no-print">
                 {(user?.role === 'MANAGER' || user?.role === 'ADMIN') && !patient.discharged && (
-                  <Button onClick={handleDischarge} disabled={dischargeMutation.isPending} variant="outline" className="border-destructive text-destructive hover:bg-destructive hover:text-white transition-colors">
-                    {dischargeMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Discharge Patient
-                  </Button>
+                  <>
+                    <Button onClick={() => setEditOpen(true)} variant="outline" data-testid="button-edit-patient">
+                      <Pencil className="w-4 h-4 mr-2" /> Edit Details
+                    </Button>
+                    <Button onClick={handleDischarge} disabled={dischargeMutation.isPending} variant="outline" className="border-destructive text-destructive hover:bg-destructive hover:text-white transition-colors">
+                      {dischargeMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Discharge Patient
+                    </Button>
+                  </>
                 )}
                 <Button onClick={handlePrint} className="bg-foreground text-background hover:bg-foreground/90 hover-elevate">
                   <Printer className="w-4 h-4 mr-2" /> Print Bill
@@ -149,6 +156,8 @@ export default function PatientDetails() {
       <div className="print-bill-container hidden">
         <BillView patient={patient} bill={bill} printMode={true} />
       </div>
+
+      <EditPatientDialog patient={patient} open={editOpen} onOpenChange={setEditOpen} />
     </div>
   );
 }
@@ -427,6 +436,144 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function EditPatientDialog({ patient, open, onOpenChange }: { patient: any, open: boolean, onOpenChange: (v: boolean) => void }) {
+  const { data: roomTypes } = useRoomTypes();
+  const updatePatient = useUpdatePatient(patient.id);
+  const { toast } = useToast();
+
+  const schema = z.object({
+    name: z.string().min(1, "Name is required"),
+    gender: z.string().min(1, "Gender is required"),
+    dateOfBirth: z.string().min(1, "Date of birth is required"),
+    phone: z.string().optional(),
+    relativePhone: z.string().optional(),
+    illness: z.string().optional(),
+    bedNumber: z.string().min(1, "Bed number is required"),
+    roomTypeId: z.coerce.number().min(1, "Room type is required"),
+  });
+
+  const form = useForm<z.infer<typeof schema>>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      name: patient.name,
+      gender: patient.gender,
+      dateOfBirth: patient.dateOfBirth,
+      phone: patient.phone ?? "",
+      relativePhone: patient.relativePhone ?? "",
+      illness: patient.illness ?? "",
+      bedNumber: patient.bedNumber,
+      roomTypeId: patient.roomTypeId,
+    },
+  });
+
+  const onSubmit = (data: z.infer<typeof schema>) => {
+    updatePatient.mutate(data, {
+      onSuccess: () => {
+        toast({ title: "Success", description: "Patient details updated." });
+        onOpenChange(false);
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to update patient.", variant: "destructive" });
+      },
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display">Edit Patient Details</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem className="col-span-2">
+                  <FormLabel>Full Name</FormLabel>
+                  <FormControl><Input data-testid="input-patient-name" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="gender" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Gender</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl><SelectTrigger data-testid="select-gender"><SelectValue placeholder="Select gender" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Date of Birth</FormLabel>
+                  <FormControl><Input type="date" data-testid="input-dob" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="phone" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phone</FormLabel>
+                  <FormControl><Input data-testid="input-phone" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="relativePhone" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Relative Phone</FormLabel>
+                  <FormControl><Input data-testid="input-relative-phone" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="illness" render={({ field }) => (
+                <FormItem className="col-span-2">
+                  <FormLabel>Diagnosis / Illness</FormLabel>
+                  <FormControl><Input data-testid="input-illness" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="bedNumber" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Bed Number</FormLabel>
+                  <FormControl><Input data-testid="input-bed-number" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="roomTypeId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Room Type</FormLabel>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} defaultValue={field.value?.toString()}>
+                    <FormControl><SelectTrigger data-testid="select-room-type"><SelectValue placeholder="Select room type" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {roomTypes?.map(rt => (
+                        <SelectItem key={rt.id} value={rt.id.toString()}>{rt.name} (₹{rt.dailyCharge}/day)</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" className="flex-1" disabled={updatePatient.isPending} data-testid="button-save-patient">
+                {updatePatient.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Save Changes
+              </Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
