@@ -475,25 +475,38 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
   const isAdmin = user?.role === 'ADMIN';
   const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string>("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const { data: doctors } = useDoctors();
+  const { data: catalog } = useQuery<any[]>({ queryKey: ["/api/procedure-catalog"] });
 
   const schema = z.object({
     name: z.string().min(1, "Procedure name is required"),
     description: z.string().optional(),
-    cost: z.coerce.number().min(1, "Cost must be greater than 0"),
+    cost: z.coerce.number().min(0, "Cost must be 0 or more"),
   });
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", description: "", cost: 0 },
   });
 
+  const resetDialog = () => {
+    form.reset({ name: "", description: "", cost: 0 });
+    setSelectedDoctorId("");
+  };
+
   const createProcedure = useMutation({
     mutationFn: async (data: z.infer<typeof schema>) => {
       const res = await fetch("/api/procedures", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, patientId: patient.id }),
+        body: JSON.stringify({
+          ...data,
+          patientId: patient.id,
+          doctorId: selectedDoctorId ? parseInt(selectedDoctorId) : undefined,
+        }),
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to add procedure");
@@ -502,7 +515,7 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
     onSuccess: () => {
       toast({ title: "Success", description: "Procedure added successfully." });
       queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
-      form.reset({ name: "", description: "", cost: 0 });
+      resetDialog();
       setOpen(false);
     },
     onError: () => toast({ title: "Error", description: "Failed to add procedure.", variant: "destructive" }),
@@ -520,53 +533,116 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
     }
   };
 
+  const handleCatalogSelect = (catalogId: string) => {
+    const item = catalog?.find(c => c.id.toString() === catalogId);
+    if (item) {
+      form.setValue("name", item.name);
+      form.setValue("description", item.description ?? "");
+      form.setValue("cost", item.cost);
+    }
+  };
+
   return (
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-display">Procedures</CardTitle>
         {!patient.discharged && canManage && (
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetDialog(); }}>
             <DialogTrigger asChild>
               <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90" data-testid="button-add-procedure">
                 <Plus className="w-4 h-4 mr-2" /> Add Procedure
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[400px]">
+            <DialogContent className="sm:max-w-[460px]">
               <DialogHeader>
                 <DialogTitle className="font-display">Add Procedure</DialogTitle>
               </DialogHeader>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit((d) => createProcedure.mutate(d))} className="space-y-4">
-                  <FormField control={form.control} name="name" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Procedure Name</FormLabel>
-                      <FormControl><Input data-testid="input-procedure-name" placeholder="e.g. Appendectomy, MRI Scan, X-Ray" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="description" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description (optional)</FormLabel>
-                      <FormControl><Input data-testid="input-procedure-description" placeholder="Additional details..." {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="cost" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cost (₹)</FormLabel>
-                      <FormControl><Input type="number" min="0" data-testid="input-procedure-cost" placeholder="0" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <div className="flex gap-2">
-                    <Button type="submit" className="flex-1 bg-primary hover:bg-primary/90" disabled={createProcedure.isPending} data-testid="button-save-procedure">
-                      {createProcedure.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Save
-                    </Button>
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
+              <div className="space-y-4 pt-1">
+                {/* Step 1: Select Doctor */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Performing Doctor</label>
+                  <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
+                    <SelectTrigger data-testid="select-doctor-procedure">
+                      <SelectValue placeholder="Select a doctor…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {doctors?.map(d => (
+                        <SelectItem key={d.id} value={d.id.toString()}>
+                          Dr. {d.name} — {d.specialization}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Step 2: Pick from catalog — shows after doctor selected */}
+                {selectedDoctorId && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Select from Catalog <span className="text-muted-foreground font-normal">(charges)</span></label>
+                    <Select onValueChange={handleCatalogSelect}>
+                      <SelectTrigger data-testid="select-catalog-procedure">
+                        <SelectValue placeholder="Pick a procedure to auto-fill…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {catalog && catalog.length > 0 ? catalog.map(c => (
+                          <SelectItem key={c.id} value={c.id.toString()}>
+                            {c.name} — ₹{c.cost.toLocaleString()}
+                          </SelectItem>
+                        )) : (
+                          <SelectItem value="__empty" disabled>No procedures in catalog</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Selecting an item pre-fills the fields below.</p>
                   </div>
-                </form>
-              </Form>
+                )}
+
+                <div className={`transition-opacity ${selectedDoctorId ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
+                  <Form {...form}>
+                    <form onSubmit={form.handleSubmit((d) => createProcedure.mutate(d))} className="space-y-3">
+                      <FormField control={form.control} name="name" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Procedure Name</FormLabel>
+                          <FormControl>
+                            <Input data-testid="input-procedure-name" placeholder="e.g. Appendectomy, MRI Scan, X-Ray" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="description" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                          <FormControl>
+                            <Input data-testid="input-procedure-description" placeholder="Additional details…" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="cost" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Cost (₹)</FormLabel>
+                          <FormControl>
+                            <Input type="number" min="0" data-testid="input-procedure-cost" placeholder="0" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          type="submit"
+                          className="flex-1 bg-primary hover:bg-primary/90"
+                          disabled={createProcedure.isPending || !selectedDoctorId}
+                          data-testid="button-save-procedure"
+                        >
+                          {createProcedure.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Save
+                        </Button>
+                        <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
+                      </div>
+                    </form>
+                  </Form>
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         )}
@@ -579,6 +655,7 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
+                <TableHead>Doctor</TableHead>
                 <TableHead>Procedure</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Cost</TableHead>
@@ -589,6 +666,9 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
               {procedures.map((p: any) => (
                 <TableRow key={p.id} data-testid={`row-procedure-${p.id}`}>
                   <TableCell>{format(new Date(p.date), "MMM dd, yyyy")}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {p.doctorId ? `Dr. ${doctors?.find(d => d.id === p.doctorId)?.name ?? "Unknown"}` : "—"}
+                  </TableCell>
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="text-muted-foreground">{p.description || "—"}</TableCell>
                   <TableCell className="text-right font-medium">₹{p.cost.toLocaleString()}</TableCell>

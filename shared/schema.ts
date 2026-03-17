@@ -82,6 +82,7 @@ export const charges = pgTable("charges", {
 export const procedures = pgTable("procedures", {
   id: serial("id").primaryKey(),
   patientId: integer("patient_id").notNull(),
+  doctorId: integer("doctor_id"),
   name: text("name").notNull(),
   description: text("description"),
   cost: integer("cost").notNull(),
