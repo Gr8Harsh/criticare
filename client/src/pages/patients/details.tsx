@@ -518,9 +518,9 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
       if (!res.ok) throw new Error("Failed to add procedure");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Success", description: "Procedure added successfully." });
-      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      await queryClient.refetchQueries({ queryKey: [api.patients.getBill.path, patient.id] });
       resetDialog();
       setOpen(false);
     },
@@ -532,7 +532,7 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
       const res = await fetch(`/api/procedures/${id}`, { method: "DELETE", credentials: "include" });
       if (res.ok) {
         toast({ title: "Success", description: "Procedure removed." });
-        queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+        await queryClient.refetchQueries({ queryKey: [api.patients.getBill.path, patient.id] });
       } else {
         toast({ title: "Error", description: "Failed to remove procedure.", variant: "destructive" });
       }
@@ -876,9 +876,9 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
       if (!res.ok) throw new Error("Failed to add surgery");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Success", description: "Surgery charges recorded." });
-      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      await queryClient.refetchQueries({ queryKey: [api.patients.getBill.path, patient.id] });
       resetDialog();
       setOpen(false);
     },
@@ -890,7 +890,7 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
       const res = await fetch(`/api/patient-surgeries/${id}`, { method: "DELETE", credentials: "include" });
       if (res.ok) {
         toast({ title: "Deleted", description: "Surgery record removed." });
-        queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+        await queryClient.refetchQueries({ queryKey: [api.patients.getBill.path, patient.id] });
       } else {
         toast({ title: "Error", description: "Failed to remove surgery.", variant: "destructive" });
       }
