@@ -1,11 +1,12 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, surgeryCatalog, patientSurgeries,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
-  type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge
+  type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge,
+  type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery
 } from "@shared/schema";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
@@ -220,6 +221,37 @@ export class DatabaseStorage {
   }
   async deleteProcedure(id: number): Promise<void> {
     await db.delete(procedures).where(eq(procedures.id, id));
+  }
+
+  // Surgery Catalog
+  async getSurgeryCatalog(): Promise<SurgeryCatalog[]> {
+    return await db.select().from(surgeryCatalog);
+  }
+  async getSurgeryCatalogByCategory(category: string): Promise<SurgeryCatalog[]> {
+    return await db.select().from(surgeryCatalog).where(eq(surgeryCatalog.category, category));
+  }
+  async createSurgeryCatalogItem(data: InsertSurgeryCatalog): Promise<SurgeryCatalog> {
+    const [item] = await db.insert(surgeryCatalog).values(data).returning();
+    return item;
+  }
+  async updateSurgeryCatalogItem(id: number, data: Partial<InsertSurgeryCatalog>): Promise<SurgeryCatalog> {
+    const [item] = await db.update(surgeryCatalog).set(data).where(eq(surgeryCatalog.id, id)).returning();
+    return item;
+  }
+  async deleteSurgeryCatalogItem(id: number): Promise<void> {
+    await db.delete(surgeryCatalog).where(eq(surgeryCatalog.id, id));
+  }
+
+  // Patient Surgeries
+  async createPatientSurgery(data: InsertPatientSurgery): Promise<PatientSurgery> {
+    const [surgery] = await db.insert(patientSurgeries).values(data).returning();
+    return surgery;
+  }
+  async getPatientSurgeries(patientId: number): Promise<PatientSurgery[]> {
+    return await db.select().from(patientSurgeries).where(eq(patientSurgeries.patientId, patientId));
+  }
+  async deletePatientSurgery(id: number): Promise<void> {
+    await db.delete(patientSurgeries).where(eq(patientSurgeries.id, id));
   }
 }
 

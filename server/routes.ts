@@ -221,13 +221,19 @@ export async function registerRoutes(
 
     const procedureCharges = proceduresList.reduce((acc, p) => acc + p.cost, 0);
 
+    const surgeriesList = await storage.getPatientSurgeries(patientId);
+    const surgeryCharges = surgeriesList.reduce((acc, s) =>
+      acc + s.surgeryCharge + s.surgeonCharge + s.assistantSurgeonCharge +
+      s.anaesthetistCharge + s.otCharge + s.otAssistantCharge, 0);
+
     const grandTotal =
       roomCharge +
       doctorCharges +
       medicineCharges +
       nursingCharges +
       otherCharges +
-      procedureCharges;
+      procedureCharges +
+      surgeryCharges;
 
     res.json({
       daysAdmitted,
@@ -237,11 +243,13 @@ export async function registerRoutes(
       nursingCharges,
       otherCharges,
       procedureCharges,
+      surgeryCharges,
       grandTotal,
       visits,
       prescriptions,
       charges: chargesList,
       procedures: proceduresList,
+      surgeries: surgeriesList,
       patient,
     });
   });
@@ -425,6 +433,74 @@ export async function registerRoutes(
 
   app.delete("/api/procedure-catalog/:id", async (req, res) => {
     await storage.deleteProcedureCatalogItem(Number(req.params.id));
+    res.sendStatus(204);
+  });
+
+  // Surgery Catalog
+  app.get("/api/surgery-catalog", async (req, res) => {
+    const catalog = await storage.getSurgeryCatalog();
+    res.json(catalog);
+  });
+
+  app.post("/api/surgery-catalog", async (req, res) => {
+    try {
+      const { name, cost, category } = z.object({
+        name: z.string().min(1),
+        cost: z.coerce.number().min(0),
+        category: z.enum(['SURGERY', 'SURGEON', 'ASSISTANT_SURGEON', 'ANAESTHETIST', 'OT', 'OT_ASSISTANT']),
+      }).parse(req.body);
+      const item = await storage.createSurgeryCatalogItem({ name, cost, category });
+      res.status(201).json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.put("/api/surgery-catalog/:id", async (req, res) => {
+    try {
+      const { name, cost, category } = z.object({
+        name: z.string().min(1).optional(),
+        cost: z.coerce.number().min(0).optional(),
+        category: z.enum(['SURGERY', 'SURGEON', 'ASSISTANT_SURGEON', 'ANAESTHETIST', 'OT', 'OT_ASSISTANT']).optional(),
+      }).parse(req.body);
+      const item = await storage.updateSurgeryCatalogItem(Number(req.params.id), { name, cost, category });
+      res.json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete("/api/surgery-catalog/:id", async (req, res) => {
+    await storage.deleteSurgeryCatalogItem(Number(req.params.id));
+    res.sendStatus(204);
+  });
+
+  // Patient Surgeries
+  app.get("/api/patients/:id/surgeries", async (req, res) => {
+    const surgeries = await storage.getPatientSurgeries(Number(req.params.id));
+    res.json(surgeries);
+  });
+
+  app.post("/api/patients/:id/surgeries", async (req, res) => {
+    try {
+      const patientId = Number(req.params.id);
+      const data = z.object({
+        surgeryCharge: z.coerce.number().min(0).default(0),
+        surgeonCharge: z.coerce.number().min(0).default(0),
+        assistantSurgeonCharge: z.coerce.number().min(0).default(0),
+        anaesthetistCharge: z.coerce.number().min(0).default(0),
+        otCharge: z.coerce.number().min(0).default(0),
+        otAssistantCharge: z.coerce.number().min(0).default(0),
+      }).parse(req.body);
+      const surgery = await storage.createPatientSurgery({ patientId, ...data });
+      res.status(201).json(surgery);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete("/api/patient-surgeries/:id", async (req, res) => {
+    await storage.deletePatientSurgery(Number(req.params.id));
     res.sendStatus(204);
   });
 

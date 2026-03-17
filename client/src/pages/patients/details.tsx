@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -129,6 +129,10 @@ export default function PatientDetails() {
               <span className="font-bold">₹{((bill as any).procedureCharges ?? 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center pb-3 border-b border-border/50">
+              <span className="text-muted-foreground">Surgeries</span>
+              <span className="font-bold">₹{((bill as any).surgeryCharges ?? 0).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center pb-3 border-b border-border/50">
               <span className="text-muted-foreground">Medicines</span>
               <span className="font-bold">₹{bill.medicineCharges.toLocaleString()}</span>
             </div>
@@ -141,18 +145,20 @@ export default function PatientDetails() {
       </div>
 
       <Tabs defaultValue="visits" className="no-print">
-        <TabsList className="bg-secondary/50 p-1 rounded-xl">
-          <TabsTrigger value="visits" className="rounded-lg px-6"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
-          <TabsTrigger value="medicines" className="rounded-lg px-6"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
-          <TabsTrigger value="procedures" className="rounded-lg px-6"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
-          <TabsTrigger value="charges" className="rounded-lg px-6"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
-          <TabsTrigger value="bill" className="rounded-lg px-6"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
+        <TabsList className="bg-secondary/50 p-1 rounded-xl flex-wrap h-auto gap-1">
+          <TabsTrigger value="visits" className="rounded-lg px-5"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
+          <TabsTrigger value="medicines" className="rounded-lg px-5"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
+          <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
+          <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgery</TabsTrigger>
+          <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
+          <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
         </TabsList>
         
         <div className="mt-6">
           <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={(bill as any).procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+          <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={(bill as any).surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
         </div>
@@ -827,6 +833,178 @@ function EditPatientDialog({ patient, open, onOpenChange }: { patient: any, open
   );
 }
 
+const SURGERY_CATEGORIES = [
+  { key: "surgeryCharge",          label: "Surgery Charge",          category: "SURGERY" },
+  { key: "surgeonCharge",          label: "Surgeon Charge",          category: "SURGEON" },
+  { key: "assistantSurgeonCharge", label: "Assistant Surgeon Charge", category: "ASSISTANT_SURGEON" },
+  { key: "anaesthetistCharge",     label: "Anaesthetist Charge",     category: "ANAESTHETIST" },
+  { key: "otCharge",               label: "OT Charge",               category: "OT" },
+  { key: "otAssistantCharge",      label: "OT Assistant Charge",     category: "OT_ASSISTANT" },
+] as const;
+
+function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries: any[], isManager: boolean }) {
+  const { data: user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const canManage = isManager || isAdmin;
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: catalog } = useQuery<any[]>({ queryKey: ["/api/surgery-catalog"] });
+
+  const defaultCharges = { surgeryCharge: "", surgeonCharge: "", assistantSurgeonCharge: "", anaesthetistCharge: "", otCharge: "", otAssistantCharge: "" };
+  const [charges, setCharges] = useState<Record<string, string>>({ ...defaultCharges });
+
+  const resetDialog = () => setCharges({ ...defaultCharges });
+
+  const handleCatalogSelect = (categoryKey: string, catalogId: string, cat: string) => {
+    const item = catalog?.find((c: any) => c.id.toString() === catalogId && c.category === cat);
+    if (item) setCharges(prev => ({ ...prev, [categoryKey]: item.cost.toString() }));
+  };
+
+  const addSurgery = useMutation({
+    mutationFn: async () => {
+      const body = Object.fromEntries(
+        Object.entries(charges).map(([k, v]) => [k, parseInt(v) || 0])
+      );
+      const res = await fetch(`/api/patients/${patient.id}/surgeries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to add surgery");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Surgery charges recorded." });
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      resetDialog();
+      setOpen(false);
+    },
+    onError: () => toast({ title: "Error", description: "Failed to save surgery.", variant: "destructive" }),
+  });
+
+  const handleDelete = async (id: number) => {
+    if (confirm("Remove this surgery record?")) {
+      const res = await fetch(`/api/patient-surgeries/${id}`, { method: "DELETE", credentials: "include" });
+      if (res.ok) {
+        toast({ title: "Deleted", description: "Surgery record removed." });
+        queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      } else {
+        toast({ title: "Error", description: "Failed to remove surgery.", variant: "destructive" });
+      }
+    }
+  };
+
+  const totalForSurgery = (s: any) =>
+    (s.surgeryCharge ?? 0) + (s.surgeonCharge ?? 0) + (s.assistantSurgeonCharge ?? 0) +
+    (s.anaesthetistCharge ?? 0) + (s.otCharge ?? 0) + (s.otAssistantCharge ?? 0);
+
+  return (
+    <Card className="border-border/50 shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="font-display">Surgery Records</CardTitle>
+        {!patient.discharged && canManage && (
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetDialog(); }}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90" data-testid="button-add-surgery">
+                <Plus className="w-4 h-4 mr-2" /> Add Surgery
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle className="font-display">Record Surgery Charges</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 pt-1">
+                {SURGERY_CATEGORIES.map(({ key, label, category }) => {
+                  const options = catalog?.filter((c: any) => c.category === category) ?? [];
+                  return (
+                    <div key={key} className="border border-border/50 rounded-lg p-3 space-y-2 bg-secondary/20">
+                      <p className="text-sm font-semibold text-foreground">{label}</p>
+                      <div className="flex gap-2 items-center">
+                        <Select onValueChange={(val) => handleCatalogSelect(key, val, category)}>
+                          <SelectTrigger className="flex-1" data-testid={`select-${key}`}>
+                            <SelectValue placeholder={options.length > 0 ? "Select from catalog…" : "No catalog items"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {options.length > 0 ? options.map((c: any) => (
+                              <SelectItem key={c.id} value={c.id.toString()}>
+                                {c.name} — ₹{c.cost.toLocaleString()}
+                              </SelectItem>
+                            )) : (
+                              <SelectItem value="__none" disabled>No entries — add via Surgery Catalog</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <div className="relative w-32 shrink-0">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            className="pl-7"
+                            placeholder="0"
+                            value={charges[key]}
+                            onChange={(e) => setCharges(prev => ({ ...prev, [key]: e.target.value }))}
+                            data-testid={`input-${key}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    className="flex-1 bg-primary hover:bg-primary/90"
+                    disabled={addSurgery.isPending}
+                    onClick={() => addSurgery.mutate()}
+                    data-testid="button-save-surgery"
+                  >
+                    {addSurgery.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Save Surgery
+                  </Button>
+                  <Button variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+      </CardHeader>
+      <CardContent>
+        {surgeries.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No surgery records</div>
+        ) : (
+          <div className="space-y-3">
+            {surgeries.map((s: any) => (
+              <div key={s.id} className="border border-border/50 rounded-lg p-4 bg-secondary/10" data-testid={`row-surgery-${s.id}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm text-muted-foreground">{format(new Date(s.date), "MMM dd, yyyy")}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-primary">Total: ₹{totalForSurgery(s).toLocaleString()}</span>
+                    {!patient.discharged && canManage && (
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)} className="text-destructive hover:bg-destructive/10 h-7 w-7" data-testid={`button-delete-surgery-${s.id}`}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+                  {SURGERY_CATEGORIES.map(({ key, label }) => s[key] > 0 && (
+                    <div key={key} className="flex justify-between bg-background rounded px-2 py-1">
+                      <span className="text-muted-foreground">{label}:</span>
+                      <span className="font-medium">₹{s[key].toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function BillView({ patient, bill, printMode = false }: { patient: any, bill: any, printMode?: boolean }) {
   return (
     <Card className={`border-border/50 shadow-md ${printMode ? 'border-none shadow-none' : ''}`}>
@@ -874,6 +1052,18 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
                 <TableRow>
                   <TableCell>Nursing Charges</TableCell>
                   <TableCell className="text-right">₹{bill.nursingCharges}</TableCell>
+                </TableRow>
+              )}
+              {(bill as any).surgeryCharges > 0 && (
+                <TableRow>
+                  <TableCell>Surgery Charges</TableCell>
+                  <TableCell className="text-right">₹{(bill as any).surgeryCharges}</TableCell>
+                </TableRow>
+              )}
+              {bill.procedureCharges > 0 && (
+                <TableRow>
+                  <TableCell>Procedures</TableCell>
+                  <TableCell className="text-right">₹{bill.procedureCharges}</TableCell>
                 </TableRow>
               )}
               {bill.charges?.filter((c: any) => c.type === "OTHER").map((c: any) => (
