@@ -9,18 +9,16 @@ import {
   type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery
 } from "@shared/schema";
 import session from "express-session";
-import connectPg from "connect-pg-simple";
-import { pool } from "./db";
+import MemoryStore from "memorystore";
 
-const PostgresSessionStore = connectPg(session);
+const MemoryStoreSession = MemoryStore(session);
 
 export class DatabaseStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({
-      pool,
-      createTableIfMissing: true,
+    this.sessionStore = new MemoryStoreSession({
+      checkPeriod: 86400000, // prune expired entries every 24h
     });
   }
 
