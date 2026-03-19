@@ -624,15 +624,6 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
                           <FormMessage />
                         </FormItem>
                       )} />
-                      <FormField control={form.control} name="cost" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Cost (₹)</FormLabel>
-                          <FormControl>
-                            <Input type="number" min="0" data-testid="input-procedure-cost" placeholder="0" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
                       <div className="flex gap-2 pt-1">
                         <Button
                           type="submit"
@@ -1060,12 +1051,12 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
                   <TableCell className="text-right">₹{(bill as any).surgeryCharges}</TableCell>
                 </TableRow>
               )}
-              {bill.procedureCharges > 0 && (
-                <TableRow>
-                  <TableCell>Procedures</TableCell>
-                  <TableCell className="text-right">₹{bill.procedureCharges}</TableCell>
+              {(bill as any).procedures?.map((p: any) => (
+                <TableRow key={p.id}>
+                  <TableCell>Procedure: {p.name}{p.description ? ` — ${p.description}` : ""}</TableCell>
+                  <TableCell className="text-right">₹{p.cost.toLocaleString()}</TableCell>
                 </TableRow>
-              )}
+              ))}
               {bill.charges?.filter((c: any) => c.type === "OTHER").map((c: any) => (
                 <TableRow key={c.id}>
                   <TableCell>{c.description || "Other Charge"}</TableCell>
