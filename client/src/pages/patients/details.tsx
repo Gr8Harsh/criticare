@@ -126,11 +126,11 @@ export default function PatientDetails() {
             </div>
             <div className="flex justify-between items-center pb-3 border-b border-border/50">
               <span className="text-muted-foreground">Procedures</span>
-              <span className="font-bold">₹{((bill as any).procedureCharges ?? 0).toLocaleString()}</span>
+              <span className="font-bold">₹{(bill.procedureCharges ?? 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center pb-3 border-b border-border/50">
               <span className="text-muted-foreground">Surgeries</span>
-              <span className="font-bold">₹{((bill as any).surgeryCharges ?? 0).toLocaleString()}</span>
+              <span className="font-bold">₹{(bill.surgeryCharges ?? 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center pb-3 border-b border-border/50">
               <span className="text-muted-foreground">Medicines</span>
@@ -157,8 +157,8 @@ export default function PatientDetails() {
         <div className="mt-6">
           <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={(bill as any).procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={(bill as any).surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+          <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+          <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
         </div>
@@ -620,6 +620,25 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
                           <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
                           <FormControl>
                             <Input data-testid="input-procedure-description" placeholder="Additional details…" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="cost" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Charge (₹)</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                className="pl-7"
+                                placeholder="0"
+                                data-testid="input-procedure-cost"
+                                {...field}
+                              />
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1118,13 +1137,13 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
                   <TableCell className="text-right">₹{bill.nursingCharges}</TableCell>
                 </TableRow>
               )}
-              {(bill as any).surgeryCharges > 0 && (
+              {bill.surgeryCharges > 0 && (
                 <TableRow>
                   <TableCell>Surgery Charges</TableCell>
-                  <TableCell className="text-right">₹{(bill as any).surgeryCharges}</TableCell>
+                  <TableCell className="text-right">₹{bill.surgeryCharges.toLocaleString()}</TableCell>
                 </TableRow>
               )}
-              {(bill as any).procedures?.map((p: any) => (
+              {bill.procedures?.map((p: any) => (
                 <TableRow key={p.id}>
                   <TableCell>Procedure: {p.name}{p.description ? ` — ${p.description}` : ""}</TableCell>
                   <TableCell className="text-right">₹{p.cost.toLocaleString()}</TableCell>
