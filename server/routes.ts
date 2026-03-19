@@ -456,6 +456,37 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // Surgery Names
+  app.get("/api/surgery-names", async (req, res) => {
+    const names = await storage.getSurgeryNames();
+    res.json(names);
+  });
+
+  app.post("/api/surgery-names", requireAdmin, async (req, res) => {
+    try {
+      const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
+      const item = await storage.createSurgeryName(name);
+      res.status(201).json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.put("/api/surgery-names/:id", requireAdmin, async (req, res) => {
+    try {
+      const { name } = z.object({ name: z.string().min(1) }).parse(req.body);
+      const item = await storage.updateSurgeryName(Number(req.params.id), name);
+      res.json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete("/api/surgery-names/:id", requireAdmin, async (req, res) => {
+    await storage.deleteSurgeryName(Number(req.params.id));
+    res.sendStatus(204);
+  });
+
   // Surgery Catalog
   app.get("/api/surgery-catalog", async (req, res) => {
     const catalog = await storage.getSurgeryCatalog();
@@ -505,6 +536,7 @@ export async function registerRoutes(
     try {
       const patientId = Number(req.params.id);
       const data = z.object({
+        surgeryName: z.string().optional(),
         surgeryCharge: z.coerce.number().min(0).default(0),
         surgeonCharge: z.coerce.number().min(0).default(0),
         assistantSurgeonCharge: z.coerce.number().min(0).default(0),

@@ -1,13 +1,14 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
   type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge,
   type DoctorSurgeryCharge,
-  type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery
+  type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery,
+  type SurgeryName
 } from "@shared/schema";
 import session from "express-session";
 import MemoryStore from "memorystore";
@@ -208,6 +209,22 @@ export class DatabaseStorage {
       const [created] = await db.insert(doctorRoomCharges).values({ doctorId, roomTypeId, charge }).returning();
       return created;
     }
+  }
+
+  // Surgery Names
+  async getSurgeryNames(): Promise<SurgeryName[]> {
+    return await db.select().from(surgeryNames).orderBy(surgeryNames.name);
+  }
+  async createSurgeryName(name: string): Promise<SurgeryName> {
+    const [item] = await db.insert(surgeryNames).values({ name }).returning();
+    return item;
+  }
+  async updateSurgeryName(id: number, name: string): Promise<SurgeryName> {
+    const [item] = await db.update(surgeryNames).set({ name }).where(eq(surgeryNames.id, id)).returning();
+    return item;
+  }
+  async deleteSurgeryName(id: number): Promise<void> {
+    await db.delete(surgeryNames).where(eq(surgeryNames.id, id));
   }
 
   // Doctor Surgery Charges

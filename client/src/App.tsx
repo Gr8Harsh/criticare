@@ -32,6 +32,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
 import RoomTypesPage from "@/pages/room-types";
 import ProceduresPage from "@/pages/procedures/index";
+import SurgeriesPage from "@/pages/surgeries/index";
 
 function Router() {
   return (
@@ -56,6 +57,9 @@ function Router() {
       </Route>
       <Route path="/procedures">
         <Shell><ProtectedRoute component={ProceduresPage} /></Shell>
+      </Route>
+      <Route path="/surgeries">
+        <Shell><ProtectedRoute component={SurgeriesPage} /></Shell>
       </Route>
       <Route path="/room-types">
         <Shell><ProtectedRoute component={RoomTypesPage} /></Shell>

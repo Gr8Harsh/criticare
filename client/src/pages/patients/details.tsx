@@ -871,11 +871,13 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
   const { data: allDoctors } = useQuery<any[]>({ queryKey: [api.doctors.list.path] });
   const { data: catalog } = useQuery<any[]>({ queryKey: ["/api/surgery-catalog"] });
 
+  const { data: surgeryNamesList } = useQuery<any[]>({ queryKey: ["/api/surgery-names"] });
+  const [selectedSurgeryName, setSelectedSurgeryName] = useState<string>("");
   const defaultCharges = { surgeryCharge: "", surgeonCharge: "", assistantSurgeonCharge: "", anaesthetistCharge: "", otCharge: "", otAssistantCharge: "" };
   const [charges, setCharges] = useState<Record<string, string>>({ ...defaultCharges });
   const [selectedDoctors, setSelectedDoctors] = useState<Record<string, string>>({});
 
-  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); };
+  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); setSelectedSurgeryName(""); };
 
   const handleCatalogSelect = (categoryKey: string, catalogId: string, cat: string) => {
     const item = catalog?.find((c: any) => c.id.toString() === catalogId && c.category === cat);
