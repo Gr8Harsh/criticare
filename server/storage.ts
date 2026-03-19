@@ -1,11 +1,12 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, surgeryCatalog, patientSurgeries,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
   type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge,
+  type DoctorSurgeryCharge,
   type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery
 } from "@shared/schema";
 import session from "express-session";
@@ -205,6 +206,25 @@ export class DatabaseStorage {
       return updated;
     } else {
       const [created] = await db.insert(doctorRoomCharges).values({ doctorId, roomTypeId, charge }).returning();
+      return created;
+    }
+  }
+
+  // Doctor Surgery Charges
+  async getDoctorSurgeryCharges(doctorId: number): Promise<DoctorSurgeryCharge[]> {
+    return await db.select().from(doctorSurgeryCharges).where(eq(doctorSurgeryCharges.doctorId, doctorId));
+  }
+  async upsertDoctorSurgeryCharge(doctorId: number, category: string, charge: number): Promise<DoctorSurgeryCharge> {
+    const [existing] = await db.select().from(doctorSurgeryCharges)
+      .where(and(eq(doctorSurgeryCharges.doctorId, doctorId), eq(doctorSurgeryCharges.category, category)));
+    if (existing) {
+      const [updated] = await db.update(doctorSurgeryCharges)
+        .set({ charge })
+        .where(and(eq(doctorSurgeryCharges.doctorId, doctorId), eq(doctorSurgeryCharges.category, category)))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(doctorSurgeryCharges).values({ doctorId, category, charge }).returning();
       return created;
     }
   }

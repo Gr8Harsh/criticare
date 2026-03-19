@@ -299,6 +299,26 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/doctors/:id/surgery-charges", async (req, res) => {
+    const doctorId = Number(req.params.id);
+    const surgeryCharges = await storage.getDoctorSurgeryCharges(doctorId);
+    res.json(surgeryCharges);
+  });
+
+  app.put("/api/doctors/:id/surgery-charges", async (req, res) => {
+    try {
+      const doctorId = Number(req.params.id);
+      const { category, charge } = z.object({
+        category: z.string(),
+        charge: z.coerce.number().min(0),
+      }).parse(req.body);
+      const result = await storage.upsertDoctorSurgeryCharge(doctorId, category, charge);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
   app.get(api.doctors.stats.path, async (req, res) => {
     const inputId = Number(req.params.id);
     // The dashboard passes userId, so look up the doctor profile by userId first

@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Plus, Search, Stethoscope, Settings2, Scissors } from "lucide-react";
+import { Loader2, Plus, Search, Stethoscope, Settings2, Scissors, ChevronDown, ChevronRight } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,6 +17,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const SURGERY_CATEGORIES = [
+  { key: "SURGEON",           label: "Surgeon Charge" },
+  { key: "ASSISTANT_SURGEON", label: "Assistant Surgeon Charge" },
+  { key: "ANAESTHETIST",      label: "Anaesthetist Charge" },
+  { key: "OT",                label: "OT Charge" },
+  { key: "OT_ASSISTANT",      label: "OT Assistant Charge" },
+];
 
 const userSchema = z.object({
   name: z.string().min(2),
@@ -31,7 +39,11 @@ const doctorSchema = z.object({
   visitCharge: z.coerce.number().min(0),
   userId: z.coerce.number().min(1, "Select a User account"),
   isSurgeon: z.boolean().default(false),
+  isAssistantSurgeon: z.boolean().default(false),
+  isOtAssistant: z.boolean().default(false),
 });
+
+// ─── Room Charges Dialog ─────────────────────────────────────────────────────
 
 function RoomChargesDialog({ doctor }: { doctor: any }) {
   const [open, setOpen] = useState(false);
@@ -68,23 +80,16 @@ function RoomChargesDialog({ doctor }: { doctor: any }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="hover-elevate"
-          data-testid={`button-room-charges-${doctor.id}`}
-        >
+        <Button variant="outline" size="sm" className="hover-elevate" data-testid={`button-room-charges-${doctor.id}`}>
           <Settings2 className="w-4 h-4 mr-1" /> Room Charges
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="font-display">
-            Room-wise Visit Charges — Dr. {doctor.name}
-          </DialogTitle>
+          <DialogTitle className="font-display">Room-wise Visit Charges — Dr. {doctor.name}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground -mt-2 mb-1">
-          Set a different visit charge for each room type. Leave blank to use the default charge (₹{doctor.visitCharge}).
+          Set a different visit charge per room type. Leave blank to use the default (₹{doctor.visitCharge}).
         </p>
         {isLoading ? (
           <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin" /></div>
@@ -107,18 +112,10 @@ function RoomChargesDialog({ doctor }: { doctor: any }) {
 }
 
 function RoomChargeRow({ roomType, currentCharge, onSave, isPending }: {
-  roomType: any;
-  currentCharge: number | string;
-  onSave: (charge: number) => void;
-  isPending: boolean;
+  roomType: any; currentCharge: number | string; onSave: (charge: number) => void; isPending: boolean;
 }) {
   const [value, setValue] = useState(currentCharge.toString());
-
-  const handleSave = () => {
-    const num = parseInt(value);
-    if (!isNaN(num) && num >= 0) onSave(num);
-  };
-
+  const handleSave = () => { const n = parseInt(value); if (!isNaN(n) && n >= 0) onSave(n); };
   return (
     <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
       <div className="flex-1">
@@ -127,29 +124,158 @@ function RoomChargeRow({ roomType, currentCharge, onSave, isPending }: {
       </div>
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground text-sm">₹</span>
-        <Input
-          type="number"
-          min="0"
-          className="w-28 h-8 text-sm"
-          placeholder={`default`}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          data-testid={`input-room-charge-${roomType.id}`}
-        />
-        <Button
-          size="sm"
-          variant="secondary"
-          className="h-8 px-3"
-          onClick={handleSave}
-          disabled={isPending}
-          data-testid={`button-save-room-charge-${roomType.id}`}
-        >
-          Save
-        </Button>
+        <Input type="number" min="0" className="w-28 h-8 text-sm" placeholder="default"
+          value={value} onChange={(e) => setValue(e.target.value)} data-testid={`input-room-charge-${roomType.id}`} />
+        <Button size="sm" variant="secondary" className="h-8 px-3" onClick={handleSave} disabled={isPending}
+          data-testid={`button-save-room-charge-${roomType.id}`}>Save</Button>
       </div>
     </div>
   );
 }
+
+// ─── Surgery Charges Dialog ──────────────────────────────────────────────────
+
+function SurgeryChargesDialog({ doctor }: { doctor: any }) {
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: surgeryCharges, isLoading } = useQuery<any[]>({
+    queryKey: [`/api/doctors/${doctor.id}/surgery-charges`],
+    enabled: open,
+  });
+
+  const upsertCharge = useMutation({
+    mutationFn: async ({ category, charge }: { category: string; charge: number }) => {
+      const res = await fetch(`/api/doctors/${doctor.id}/surgery-charges`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, charge }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/doctors/${doctor.id}/surgery-charges`] });
+      toast({ title: "Saved", description: "Surgery charge updated." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to save.", variant: "destructive" }),
+  });
+
+  const getCharge = (category: string) =>
+    surgeryCharges?.find((sc) => sc.category === category)?.charge ?? "";
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="hover-elevate" data-testid={`button-surgery-charges-${doctor.id}`}>
+          <Scissors className="w-4 h-4 mr-1" /> Surgery Charges
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[460px]">
+        <DialogHeader>
+          <DialogTitle className="font-display">Surgery Charges — Dr. {doctor.name}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground -mt-2 mb-2">
+          Click a charge category to expand and set the amount for this doctor.
+        </p>
+        {isLoading ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin" /></div>
+        ) : (
+          <div className="space-y-2">
+            {SURGERY_CATEGORIES.map(({ key, label }) => {
+              const isOpen = expanded === key;
+              return (
+                <div key={key} className="rounded-lg border border-border/50 overflow-hidden">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-4 py-3 bg-secondary/20 hover:bg-secondary/40 transition-colors text-left"
+                    onClick={() => setExpanded(isOpen ? null : key)}
+                    data-testid={`expand-surgery-${key}`}
+                  >
+                    <span className="font-medium text-sm">{label}</span>
+                    <div className="flex items-center gap-2">
+                      {getCharge(key) !== "" && (
+                        <span className="text-xs text-primary font-semibold">₹{getCharge(key)}</span>
+                      )}
+                      {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                    </div>
+                  </button>
+                  {isOpen && (
+                    <SurgeryChargeRow
+                      category={key}
+                      currentCharge={getCharge(key)}
+                      onSave={(charge) => upsertCharge.mutate({ category: key, charge })}
+                      isPending={upsertCharge.isPending}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SurgeryChargeRow({ category, currentCharge, onSave, isPending }: {
+  category: string; currentCharge: number | string; onSave: (charge: number) => void; isPending: boolean;
+}) {
+  const [value, setValue] = useState(currentCharge.toString());
+  const handleSave = () => { const n = parseInt(value); if (!isNaN(n) && n >= 0) onSave(n); };
+  return (
+    <div className="flex items-center gap-3 p-3 bg-background border-t border-border/30">
+      <span className="text-muted-foreground text-sm">₹</span>
+      <Input
+        type="number"
+        min="0"
+        className="flex-1 h-8 text-sm"
+        placeholder="Enter charge amount"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        data-testid={`input-surgery-charge-${category}`}
+      />
+      <Button size="sm" className="h-8 px-4" onClick={handleSave} disabled={isPending}
+        data-testid={`button-save-surgery-charge-${category}`}>
+        {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+      </Button>
+    </div>
+  );
+}
+
+// ─── Role Badges ─────────────────────────────────────────────────────────────
+
+function DoctorRoleBadges({ doc }: { doc: any }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {doc.isSurgeon && (
+        <Badge className="gap-1 text-xs bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200">
+          <Scissors className="w-3 h-3" /> Surgeon
+        </Badge>
+      )}
+      {doc.isAssistantSurgeon && (
+        <Badge className="gap-1 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200">
+          <Scissors className="w-3 h-3" /> Asst. Surgeon
+        </Badge>
+      )}
+      {doc.isOtAssistant && (
+        <Badge className="gap-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200">
+          <Settings2 className="w-3 h-3" /> OT Assistant
+        </Badge>
+      )}
+      {!doc.isSurgeon && !doc.isAssistantSurgeon && !doc.isOtAssistant && (
+        <Badge variant="secondary" className="gap-1 text-xs">
+          <Stethoscope className="w-3 h-3" /> Doctor
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DoctorsList() {
   const { data: doctors, isLoading } = useDoctors();
@@ -162,7 +288,7 @@ export default function DoctorsList() {
 
   const { data: usersList } = useQuery<any[]>({
     queryKey: ["/api/admin/users"],
-    enabled: currentUser?.role === 'ADMIN'
+    enabled: currentUser?.role === "ADMIN",
   });
 
   const createUserMutation = useMutation({
@@ -172,10 +298,7 @@ export default function DoctorsList() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to create user");
-      }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Failed to create user"); }
       return res.json();
     },
     onSuccess: () => {
@@ -184,9 +307,7 @@ export default function DoctorsList() {
       setIsAddUserOpen(false);
       userForm.reset();
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    }
+    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
   const createDoctor = useMutation({
@@ -205,35 +326,42 @@ export default function DoctorsList() {
       toast({ title: "Doctor added successfully" });
       setIsAddDoctorOpen(false);
       doctorForm.reset();
-    }
+    },
   });
 
   const userForm = useForm<z.infer<typeof userSchema>>({
     resolver: zodResolver(userSchema),
-    defaultValues: { name: "", email: "", password: "", role: "DOCTOR" }
+    defaultValues: { name: "", email: "", password: "", role: "DOCTOR" },
   });
 
   const doctorForm = useForm<z.infer<typeof doctorSchema>>({
     resolver: zodResolver(doctorSchema),
-    defaultValues: { name: "", specialization: "", visitCharge: 0, userId: 0, isSurgeon: false }
+    defaultValues: { name: "", specialization: "", visitCharge: 0, userId: 0, isSurgeon: false, isAssistantSurgeon: false, isOtAssistant: false },
   });
 
-  const filteredDoctors = doctors?.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredDoctors = doctors?.filter((d) => d.name.toLowerCase().includes(search.toLowerCase()));
 
-  if (currentUser?.role !== 'MANAGER' && currentUser?.role !== 'ADMIN') return <div>Unauthorized</div>;
+  if (currentUser?.role !== "MANAGER" && currentUser?.role !== "ADMIN") return <div>Unauthorized</div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-display font-bold tracking-tight">{currentUser?.role === 'ADMIN' ? 'Staff Management' : 'Doctors'}</h1>
-          <p className="text-muted-foreground">{currentUser?.role === 'ADMIN' ? 'Manage hospital medical and administrative staff.' : 'View available doctors and their specializations.'}</p>
+          <h1 className="text-3xl font-display font-bold tracking-tight">
+            {currentUser?.role === "ADMIN" ? "Staff Management" : "Doctors"}
+          </h1>
+          <p className="text-muted-foreground">
+            {currentUser?.role === "ADMIN" ? "Manage hospital medical and administrative staff." : "View available doctors and their specializations."}
+          </p>
         </div>
-        {currentUser?.role === 'ADMIN' && (
+        {currentUser?.role === "ADMIN" && (
           <div className="flex gap-2">
+            {/* Add User Account */}
             <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="hover-elevate shadow-sm"><Plus className="w-5 h-5 mr-2" /> Add User Account</Button>
+                <Button variant="outline" className="hover-elevate shadow-sm">
+                  <Plus className="w-5 h-5 mr-2" /> Add User Account
+                </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Create New User Account</DialogTitle></DialogHeader>
@@ -266,11 +394,13 @@ export default function DoctorsList() {
                 </Form>
               </DialogContent>
             </Dialog>
+
+            {/* Add Doctor Profile */}
             <Dialog open={isAddDoctorOpen} onOpenChange={setIsAddDoctorOpen}>
               <DialogTrigger asChild>
                 <Button className="hover-elevate shadow-lg"><Plus className="w-5 h-5 mr-2" /> Add Doctor Profile</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="sm:max-w-[480px]">
                 <DialogHeader><DialogTitle>New Doctor Profile</DialogTitle></DialogHeader>
                 <Form {...doctorForm}>
                   <form onSubmit={doctorForm.handleSubmit((d) => createDoctor.mutate(d))} className="space-y-4">
@@ -294,7 +424,7 @@ export default function DoctorsList() {
                         <Select onValueChange={field.onChange} defaultValue={field.value.toString()}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger></FormControl>
                           <SelectContent>
-                            {usersList?.filter(u => u.role === 'DOCTOR').map(u => (
+                            {usersList?.filter((u) => u.role === "DOCTOR").map((u) => (
                               <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.email})</SelectItem>
                             ))}
                           </SelectContent>
@@ -302,23 +432,33 @@ export default function DoctorsList() {
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <FormField control={doctorForm.control} name="isSurgeon" render={({ field }) => (
-                      <FormItem className="flex items-center gap-3 rounded-lg border border-border/50 p-3 bg-secondary/20">
-                        <FormControl>
-                          <Checkbox
-                            data-testid="checkbox-is-surgeon"
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                        <div className="space-y-0.5 leading-none">
-                          <FormLabel className="cursor-pointer flex items-center gap-1.5">
-                            <Scissors className="w-3.5 h-3.5" /> Mark as Surgeon
-                          </FormLabel>
-                          <p className="text-xs text-muted-foreground">Surgeon doctors can be assigned surgery charges.</p>
-                        </div>
-                      </FormItem>
-                    )} />
+
+                    {/* Role checkboxes */}
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">Surgical Roles</p>
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { name: "isSurgeon" as const, label: "Mark as Surgeon", icon: <Scissors className="w-3.5 h-3.5" />, hint: "Can be assigned as primary surgeon." },
+                          { name: "isAssistantSurgeon" as const, label: "Mark as Assistant Surgeon", icon: <Scissors className="w-3.5 h-3.5 opacity-70" />, hint: "Can assist in surgical procedures." },
+                          { name: "isOtAssistant" as const, label: "Mark as OT Assistant", icon: <Settings2 className="w-3.5 h-3.5" />, hint: "Can be assigned as OT assistant." },
+                        ].map(({ name, label, icon, hint }) => (
+                          <FormField key={name} control={doctorForm.control} name={name} render={({ field }) => (
+                            <FormItem className="flex items-center gap-3 rounded-lg border border-border/50 p-3 bg-secondary/20">
+                              <FormControl>
+                                <Checkbox data-testid={`checkbox-${name}`} checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                              <div className="space-y-0.5 leading-none">
+                                <FormLabel className="cursor-pointer flex items-center gap-1.5 font-medium">
+                                  {icon} {label}
+                                </FormLabel>
+                                <p className="text-xs text-muted-foreground">{hint}</p>
+                              </div>
+                            </FormItem>
+                          )} />
+                        ))}
+                      </div>
+                    </div>
+
                     <Button type="submit" className="w-full" disabled={createDoctor.isPending}>Save Profile</Button>
                   </form>
                 </Form>
@@ -332,11 +472,8 @@ export default function DoctorsList() {
         <CardHeader className="py-4 border-b bg-secondary/20">
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search doctors..." 
-              value={search} onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 bg-background border-border/60"
-            />
+            <Input placeholder="Search doctors..." value={search} onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 bg-background border-border/60" />
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -348,9 +485,9 @@ export default function DoctorsList() {
                 <TableRow>
                   <TableHead>Doctor Name</TableHead>
                   <TableHead>Specialization</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>Roles</TableHead>
                   <TableHead className="text-right">Default Visit Charge</TableHead>
-                  <TableHead className="text-right">Room Charges</TableHead>
+                  <TableHead className="text-right">Charge Config</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -362,21 +499,14 @@ export default function DoctorsList() {
                       </div>
                     </TableCell>
                     <TableCell>{doc.specialization}</TableCell>
-                    <TableCell>
-                      {doc.isSurgeon ? (
-                        <Badge className="gap-1 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200">
-                          <Scissors className="w-3 h-3" /> Surgeon
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="gap-1">
-                          <Stethoscope className="w-3 h-3" /> Doctor
-                        </Badge>
-                      )}
-                    </TableCell>
+                    <TableCell><DoctorRoleBadges doc={doc} /></TableCell>
                     <TableCell className="text-right font-medium">₹{doc.visitCharge}</TableCell>
                     <TableCell className="text-right">
-                      {(currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER') && (
-                        <RoomChargesDialog doctor={doc} />
+                      {(currentUser?.role === "ADMIN" || currentUser?.role === "MANAGER") && (
+                        <div className="flex justify-end gap-2">
+                          <RoomChargesDialog doctor={doc} />
+                          <SurgeryChargesDialog doctor={doc} />
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>

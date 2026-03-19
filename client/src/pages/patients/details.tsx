@@ -833,6 +833,15 @@ const SURGERY_CATEGORIES = [
   { key: "otAssistantCharge",      label: "OT Assistant Charge",     category: "OT_ASSISTANT" },
 ] as const;
 
+// Mapping from surgery category key to doctor filter role and surgery-charge category key
+const DOCTOR_CATEGORY_CONFIG: Record<string, { roleFilter: "isSurgeon" | "isAssistantSurgeon" | "isOtAssistant" | null; chargeCategory: string }> = {
+  surgeonCharge:          { roleFilter: "isSurgeon",           chargeCategory: "SURGEON" },
+  assistantSurgeonCharge: { roleFilter: "isAssistantSurgeon",  chargeCategory: "ASSISTANT_SURGEON" },
+  anaesthetistCharge:     { roleFilter: null,                  chargeCategory: "ANAESTHETIST" },
+  otCharge:               { roleFilter: null,                  chargeCategory: "OT" },
+  otAssistantCharge:      { roleFilter: "isOtAssistant",       chargeCategory: "OT_ASSISTANT" },
+};
+
 function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries: any[], isManager: boolean }) {
   const { data: user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
@@ -840,17 +849,32 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-
+  const { data: allDoctors } = useQuery<any[]>({ queryKey: [api.doctors.list.path] });
   const { data: catalog } = useQuery<any[]>({ queryKey: ["/api/surgery-catalog"] });
 
   const defaultCharges = { surgeryCharge: "", surgeonCharge: "", assistantSurgeonCharge: "", anaesthetistCharge: "", otCharge: "", otAssistantCharge: "" };
   const [charges, setCharges] = useState<Record<string, string>>({ ...defaultCharges });
+  const [selectedDoctors, setSelectedDoctors] = useState<Record<string, string>>({});
 
-  const resetDialog = () => setCharges({ ...defaultCharges });
+  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); };
 
   const handleCatalogSelect = (categoryKey: string, catalogId: string, cat: string) => {
     const item = catalog?.find((c: any) => c.id.toString() === catalogId && c.category === cat);
     if (item) setCharges(prev => ({ ...prev, [categoryKey]: item.cost.toString() }));
+  };
+
+  const handleDoctorSelect = async (categoryKey: string, doctorId: string) => {
+    setSelectedDoctors(prev => ({ ...prev, [categoryKey]: doctorId }));
+    const config = DOCTOR_CATEGORY_CONFIG[categoryKey];
+    if (!config || !doctorId) return;
+    try {
+      const res = await fetch(`/api/doctors/${doctorId}/surgery-charges`, { credentials: "include" });
+      if (res.ok) {
+        const surgCharges: any[] = await res.json();
+        const match = surgCharges.find((sc) => sc.category === config.chargeCategory);
+        if (match) setCharges(prev => ({ ...prev, [categoryKey]: match.charge.toString() }));
+      }
+    } catch {}
   };
 
   const addSurgery = useMutation({
@@ -892,6 +916,12 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
     (s.surgeryCharge ?? 0) + (s.surgeonCharge ?? 0) + (s.assistantSurgeonCharge ?? 0) +
     (s.anaesthetistCharge ?? 0) + (s.otCharge ?? 0) + (s.otAssistantCharge ?? 0);
 
+  const getFilteredDoctors = (roleFilter: string | null) => {
+    if (!allDoctors) return [];
+    if (!roleFilter) return allDoctors;
+    return allDoctors.filter((d) => d[roleFilter]);
+  };
+
   return (
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
@@ -903,15 +933,17 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                 <Plus className="w-4 h-4 mr-2" /> Add Surgery
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
+            <DialogContent className="sm:max-w-[560px]">
               <DialogHeader>
                 <DialogTitle className="font-display">Record Surgery Charges</DialogTitle>
               </DialogHeader>
-              <div className="space-y-3 pt-1">
-                {SURGERY_CATEGORIES.map(({ key, label, category }) => {
+              <div className="space-y-3 pt-1 max-h-[70vh] overflow-y-auto pr-1">
+                {/* Surgery Charge — catalog-based, no doctor */}
+                {(() => {
+                  const { key, label, category } = SURGERY_CATEGORIES[0];
                   const options = catalog?.filter((c: any) => c.category === category) ?? [];
                   return (
-                    <div key={key} className="border border-border/50 rounded-lg p-3 space-y-2 bg-secondary/20">
+                    <div className="border border-border/50 rounded-lg p-3 space-y-2 bg-secondary/20">
                       <p className="text-sm font-semibold text-foreground">{label}</p>
                       <div className="flex gap-2 items-center">
                         <Select onValueChange={(val) => handleCatalogSelect(key, val, category)}>
@@ -931,10 +963,7 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                         <div className="relative w-32 shrink-0">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
                           <Input
-                            type="number"
-                            min="0"
-                            className="pl-7"
-                            placeholder="0"
+                            type="number" min="0" className="pl-7" placeholder="0"
                             value={charges[key]}
                             onChange={(e) => setCharges(prev => ({ ...prev, [key]: e.target.value }))}
                             data-testid={`input-${key}`}
@@ -943,7 +972,51 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                       </div>
                     </div>
                   );
+                })()}
+
+                {/* Doctor-linked charges */}
+                {SURGERY_CATEGORIES.slice(1).map(({ key, label }) => {
+                  const config = DOCTOR_CATEGORY_CONFIG[key];
+                  const doctors = getFilteredDoctors(config?.roleFilter ?? null);
+                  return (
+                    <div key={key} className="border border-border/50 rounded-lg p-3 space-y-2 bg-secondary/20">
+                      <p className="text-sm font-semibold text-foreground">{label}</p>
+                      <div className="flex gap-2 items-center">
+                        <Select
+                          value={selectedDoctors[key] ?? ""}
+                          onValueChange={(val) => handleDoctorSelect(key, val)}
+                        >
+                          <SelectTrigger className="flex-1" data-testid={`select-doctor-${key}`}>
+                            <SelectValue placeholder={doctors.length > 0 ? "Select doctor…" : "No doctors available"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none">— None —</SelectItem>
+                            {doctors.map((d: any) => (
+                              <SelectItem key={d.id} value={d.id.toString()}>
+                                Dr. {d.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="relative w-32 shrink-0">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                          <Input
+                            type="number" min="0" className="pl-7" placeholder="0"
+                            value={charges[key]}
+                            onChange={(e) => setCharges(prev => ({ ...prev, [key]: e.target.value }))}
+                            data-testid={`input-${key}`}
+                          />
+                        </div>
+                      </div>
+                      {selectedDoctors[key] && selectedDoctors[key] !== "__none" && charges[key] && (
+                        <p className="text-xs text-primary">
+                          Auto-filled from Dr. {doctors.find((d: any) => d.id.toString() === selectedDoctors[key])?.name}'s configured rate
+                        </p>
+                      )}
+                    </div>
+                  );
                 })}
+
                 <div className="flex gap-2 pt-2">
                   <Button
                     className="flex-1 bg-primary hover:bg-primary/90"
