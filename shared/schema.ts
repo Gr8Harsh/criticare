@@ -39,6 +39,7 @@ export const doctors = pgTable("doctors", {
   specialization: text("specialization").notNull(),
   visitCharge: integer("visit_charge").notNull(),
   userId: integer("user_id").notNull(),
+  isSurgeon: boolean("is_surgeon").default(false).notNull(),
 });
 
 export const patientDoctors = pgTable("patient_doctors", {

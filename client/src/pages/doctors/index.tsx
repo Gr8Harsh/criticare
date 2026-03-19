@@ -4,10 +4,12 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Plus, Search, Stethoscope, Settings2 } from "lucide-react";
+import { Loader2, Plus, Search, Stethoscope, Settings2, Scissors } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,6 +30,7 @@ const doctorSchema = z.object({
   specialization: z.string().min(2),
   visitCharge: z.coerce.number().min(0),
   userId: z.coerce.number().min(1, "Select a User account"),
+  isSurgeon: z.boolean().default(false),
 });
 
 function RoomChargesDialog({ doctor }: { doctor: any }) {
@@ -212,7 +215,7 @@ export default function DoctorsList() {
 
   const doctorForm = useForm<z.infer<typeof doctorSchema>>({
     resolver: zodResolver(doctorSchema),
-    defaultValues: { name: "", specialization: "", visitCharge: 0, userId: 0 }
+    defaultValues: { name: "", specialization: "", visitCharge: 0, userId: 0, isSurgeon: false }
   });
 
   const filteredDoctors = doctors?.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
@@ -299,6 +302,23 @@ export default function DoctorsList() {
                         <FormMessage />
                       </FormItem>
                     )} />
+                    <FormField control={doctorForm.control} name="isSurgeon" render={({ field }) => (
+                      <FormItem className="flex items-center gap-3 rounded-lg border border-border/50 p-3 bg-secondary/20">
+                        <FormControl>
+                          <Checkbox
+                            data-testid="checkbox-is-surgeon"
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <div className="space-y-0.5 leading-none">
+                          <FormLabel className="cursor-pointer flex items-center gap-1.5">
+                            <Scissors className="w-3.5 h-3.5" /> Mark as Surgeon
+                          </FormLabel>
+                          <p className="text-xs text-muted-foreground">Surgeon doctors can be assigned surgery charges.</p>
+                        </div>
+                      </FormItem>
+                    )} />
                     <Button type="submit" className="w-full" disabled={createDoctor.isPending}>Save Profile</Button>
                   </form>
                 </Form>
@@ -328,6 +348,7 @@ export default function DoctorsList() {
                 <TableRow>
                   <TableHead>Doctor Name</TableHead>
                   <TableHead>Specialization</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead className="text-right">Default Visit Charge</TableHead>
                   <TableHead className="text-right">Room Charges</TableHead>
                 </TableRow>
@@ -335,10 +356,23 @@ export default function DoctorsList() {
               <TableBody>
                 {filteredDoctors?.map((doc) => (
                   <TableRow key={doc.id} data-testid={`row-doctor-${doc.id}`}>
-                    <TableCell className="font-bold flex items-center gap-2">
-                      <Stethoscope className="w-4 h-4 text-primary" /> Dr. {doc.name}
+                    <TableCell className="font-bold">
+                      <div className="flex items-center gap-2">
+                        <Stethoscope className="w-4 h-4 text-primary shrink-0" /> Dr. {doc.name}
+                      </div>
                     </TableCell>
                     <TableCell>{doc.specialization}</TableCell>
+                    <TableCell>
+                      {doc.isSurgeon ? (
+                        <Badge className="gap-1 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200">
+                          <Scissors className="w-3 h-3" /> Surgeon
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="gap-1">
+                          <Stethoscope className="w-3 h-3" /> Doctor
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right font-medium">₹{doc.visitCharge}</TableCell>
                     <TableCell className="text-right">
                       {(currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER') && (

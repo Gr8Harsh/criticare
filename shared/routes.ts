@@ -161,7 +161,7 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/doctors' as const,
-      input: insertDoctorSchema.extend({ visitCharge: z.coerce.number(), userId: z.coerce.number() }),
+      input: insertDoctorSchema.extend({ visitCharge: z.coerce.number(), userId: z.coerce.number(), isSurgeon: z.boolean().optional().default(false) }),
       responses: {
         201: z.custom<typeof doctors.$inferSelect>(),
       },
