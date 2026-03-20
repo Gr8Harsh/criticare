@@ -900,9 +900,13 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
 
   const addSurgery = useMutation({
     mutationFn: async () => {
-      const body = Object.fromEntries(
+      const chargeBody = Object.fromEntries(
         Object.entries(charges).map(([k, v]) => [k, parseInt(v) || 0])
       );
+      const body = {
+        ...chargeBody,
+        ...(selectedSurgeryName ? { surgeryName: selectedSurgeryName } : {}),
+      };
       const res = await fetch(`/api/patients/${patient.id}/surgeries`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -959,6 +963,29 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                 <DialogTitle className="font-display">Record Surgery Charges</DialogTitle>
               </DialogHeader>
               <div className="space-y-3 pt-1 max-h-[70vh] overflow-y-auto pr-1">
+
+                {/* Surgery Name selector */}
+                <div className="border border-primary/30 rounded-lg p-3 space-y-1.5 bg-primary/5">
+                  <p className="text-sm font-semibold text-foreground">Surgery Name</p>
+                  <Select value={selectedSurgeryName} onValueChange={setSelectedSurgeryName}>
+                    <SelectTrigger data-testid="select-surgery-name">
+                      <SelectValue placeholder={surgeryNamesList && surgeryNamesList.length > 0 ? "Select surgery name…" : "No surgery names — add via Surgeries menu"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {surgeryNamesList && surgeryNamesList.length > 0 ? (
+                        surgeryNamesList.map((sn: any) => (
+                          <SelectItem key={sn.id} value={sn.name}>{sn.name}</SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="__none" disabled>No surgery names added yet</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {selectedSurgeryName && (
+                    <p className="text-xs text-primary font-medium">Selected: {selectedSurgeryName}</p>
+                  )}
+                </div>
+
                 {/* Surgery Charge — catalog-based, no doctor */}
                 {(() => {
                   const { key, label, category } = SURGERY_CATEGORIES[0];
@@ -1062,16 +1089,24 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
           <div className="space-y-3">
             {surgeries.map((s: any) => (
               <div key={s.id} className="border border-border/50 rounded-lg p-4 bg-secondary/10" data-testid={`row-surgery-${s.id}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm text-muted-foreground">{format(new Date(s.date), "MMM dd, yyyy")}</span>
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-primary">Total: ₹{totalForSurgery(s).toLocaleString()}</span>
+                    <Scissors className="w-4 h-4 text-primary shrink-0" />
+                    <span className="font-semibold text-foreground">
+                      {s.surgeryName ?? "Surgery"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
                     {!patient.discharged && canManage && (
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)} className="text-destructive hover:bg-destructive/10 h-7 w-7" data-testid={`button-delete-surgery-${s.id}`}>
                         <X className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs text-muted-foreground">{format(new Date(s.date), "MMM dd, yyyy")}</span>
+                  <span className="font-bold text-primary">Total: ₹{totalForSurgery(s).toLocaleString()}</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
                   {SURGERY_CATEGORIES.map(({ key, label }) => s[key] > 0 && (
