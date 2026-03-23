@@ -107,8 +107,13 @@ export async function registerRoutes(
   app.post("/api/admin/room-types/:id", requireAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const { dailyCharge } = z.object({ dailyCharge: z.coerce.number() }).parse(req.body);
-      const [updated] = await db.update(roomTypes).set({ dailyCharge }).where(eq(roomTypes.id, id)).returning();
+      const fields = z.object({
+        dailyCharge: z.coerce.number().optional(),
+        bedCharge: z.coerce.number().optional(),
+        nursingCharge: z.coerce.number().optional(),
+        rmoCharge: z.coerce.number().optional(),
+      }).parse(req.body);
+      const [updated] = await db.update(roomTypes).set(fields).where(eq(roomTypes.id, id)).returning();
       res.json(updated);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -211,40 +216,54 @@ export async function registerRoutes(
       ),
     );
 
+    let bedCharges = 0;
+    let roomNursingCharges = 0;
+    let rmoCharges = 0;
+
     if (roomCharge === 0) {
       const allRoomTypes = await storage.getRoomTypes();
       const switches = await storage.getRoomSwitchesByPatient(patientId);
       switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
 
+      // Helper to accumulate all room-based charges for a segment
+      const addSegmentCharges = (roomTypeId: number, days: number) => {
+        const rt = allRoomTypes.find((r) => r.id === roomTypeId);
+        if (!rt) return;
+        roomCharge += days * rt.dailyCharge;
+        bedCharges += days * rt.bedCharge;
+        roomNursingCharges += days * rt.nursingCharge;
+        rmoCharges += days * rt.rmoCharge;
+      };
+
       if (switches.length === 0) {
-        const roomType = allRoomTypes.find((r) => r.id === patient.roomTypeId);
-        if (roomType) roomCharge = roomType.dailyCharge * daysAdmitted;
+        addSegmentCharges(patient.roomTypeId, daysAdmitted);
       } else {
         let prevDate = admissionDate;
         let prevRoomTypeId = switches[0].fromRoomTypeId;
 
         for (const sw of switches) {
           const switchDate = new Date(sw.switchDate);
-          const oldRate = allRoomTypes.find((r) => r.id === prevRoomTypeId)?.dailyCharge ?? 0;
-          const newRate = allRoomTypes.find((r) => r.id === sw.toRoomTypeId)?.dailyCharge ?? 0;
           const diffDays = Math.floor((switchDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24));
 
           if (sw.isHalfDay) {
-            roomCharge += (diffDays + 0.5) * oldRate + 0.5 * newRate;
-            prevDate = new Date(switchDate.getTime() + 1000 * 3600 * 24); // next day
+            addSegmentCharges(prevRoomTypeId, diffDays + 0.5);
+            addSegmentCharges(sw.toRoomTypeId, 0.5);
+            prevDate = new Date(switchDate.getTime() + 1000 * 3600 * 24);
           } else {
-            roomCharge += diffDays * oldRate;
+            addSegmentCharges(prevRoomTypeId, diffDays);
             prevDate = switchDate;
           }
           prevRoomTypeId = sw.toRoomTypeId;
         }
 
-        // Final segment: from prevDate to dischargeDate
-        const finalRate = allRoomTypes.find((r) => r.id === prevRoomTypeId)?.dailyCharge ?? 0;
         const finalDays = Math.max(1, Math.ceil((dischargeDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24)));
-        roomCharge += finalDays * finalRate;
-        roomCharge = Math.round(roomCharge);
+        addSegmentCharges(prevRoomTypeId, finalDays);
       }
+
+      roomCharge = Math.round(roomCharge);
+      bedCharges = Math.round(bedCharges);
+      roomNursingCharges = Math.round(roomNursingCharges);
+      rmoCharges = Math.round(rmoCharges);
     }
 
     const procedureCharges = proceduresList.reduce((acc, p) => acc + p.cost, 0);
@@ -256,6 +275,9 @@ export async function registerRoutes(
 
     const grandTotal =
       roomCharge +
+      bedCharges +
+      roomNursingCharges +
+      rmoCharges +
       doctorCharges +
       medicineCharges +
       nursingCharges +
@@ -269,6 +291,9 @@ export async function registerRoutes(
     res.json({
       daysAdmitted,
       roomCharge,
+      bedCharges,
+      roomNursingCharges,
+      rmoCharges,
       doctorCharges,
       medicineCharges,
       nursingCharges,

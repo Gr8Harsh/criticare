@@ -236,7 +236,12 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/room-types' as const,
-      input: insertRoomTypeSchema.extend({ dailyCharge: z.coerce.number() }),
+      input: insertRoomTypeSchema.extend({
+        dailyCharge: z.coerce.number(),
+        bedCharge: z.coerce.number().default(0),
+        nursingCharge: z.coerce.number().default(0),
+        rmoCharge: z.coerce.number().default(0),
+      }),
       responses: {
         201: z.custom<typeof roomTypes.$inferSelect>(),
       }

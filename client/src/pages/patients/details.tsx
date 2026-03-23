@@ -115,28 +115,36 @@ export default function PatientDetails() {
           <CardHeader className="pb-4">
             <CardTitle className="text-lg font-display">Bill Summary</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-border/50">
-              <span className="text-muted-foreground">Days Admitted</span>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between items-center pb-2 border-b border-border/50">
+              <span className="text-muted-foreground text-sm">Days Admitted</span>
               <span className="font-bold">{bill.daysAdmitted} Days</span>
             </div>
-            <div className="flex justify-between items-center pb-3 border-b border-border/50">
-              <span className="text-muted-foreground">Total Services</span>
-              <span className="font-bold">₹{(bill.doctorCharges + bill.nursingCharges + bill.otherCharges).toLocaleString()}</span>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Room Charge</span>
+              <span className="font-medium">₹{(bill.roomCharge ?? 0).toLocaleString()}</span>
             </div>
-            <div className="flex justify-between items-center pb-3 border-b border-border/50">
-              <span className="text-muted-foreground">Procedures</span>
-              <span className="font-bold">₹{(bill.procedureCharges ?? 0).toLocaleString()}</span>
+            {(bill.bedCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Bed Charge</span>
+              <span className="font-medium">₹{bill.bedCharges.toLocaleString()}</span>
+            </div>}
+            {(bill.roomNursingCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Nursing Charge</span>
+              <span className="font-medium">₹{bill.roomNursingCharges.toLocaleString()}</span>
+            </div>}
+            {(bill.rmoCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm pb-2 border-b border-border/50">
+              <span className="text-muted-foreground">RMO Charge</span>
+              <span className="font-medium">₹{bill.rmoCharges.toLocaleString()}</span>
+            </div>}
+            <div className="flex justify-between items-center text-sm pb-2 border-b border-border/50">
+              <span className="text-muted-foreground">Services &amp; Others</span>
+              <span className="font-medium">₹{(bill.doctorCharges + bill.nursingCharges + bill.otherCharges + (bill.procedureCharges ?? 0) + (bill.surgeryCharges ?? 0)).toLocaleString()}</span>
             </div>
-            <div className="flex justify-between items-center pb-3 border-b border-border/50">
-              <span className="text-muted-foreground">Surgeries</span>
-              <span className="font-bold">₹{(bill.surgeryCharges ?? 0).toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between items-center pb-3 border-b border-border/50">
+            <div className="flex justify-between items-center text-sm pb-2 border-b border-border/50">
               <span className="text-muted-foreground">Medicines</span>
-              <span className="font-bold">₹{bill.medicineCharges.toLocaleString()}</span>
+              <span className="font-medium">₹{bill.medicineCharges.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between items-center pt-2">
+            <div className="flex justify-between items-center pt-1">
               <span className="text-lg font-display text-primary">Grand Total</span>
               <span className="text-2xl font-bold text-primary">₹{bill.grandTotal.toLocaleString()}</span>
             </div>
@@ -1324,11 +1332,29 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
                 <TableCell>
                   Room Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})
                   {bill.roomSwitches?.length > 0 && (
-                    <span className="text-xs text-muted-foreground ml-2">— {bill.roomSwitches.length} room switch{bill.roomSwitches.length !== 1 ? "es" : ""}, incl. half-day splits</span>
+                    <span className="text-xs text-muted-foreground ml-2">— {bill.roomSwitches.length} room switch{bill.roomSwitches.length !== 1 ? "es" : ""}</span>
                   )}
                 </TableCell>
                 <TableCell className="text-right">₹{bill.roomCharge.toLocaleString()}</TableCell>
               </TableRow>
+              {(bill.bedCharges ?? 0) > 0 && (
+                <TableRow>
+                  <TableCell>Bed Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})</TableCell>
+                  <TableCell className="text-right">₹{bill.bedCharges.toLocaleString()}</TableCell>
+                </TableRow>
+              )}
+              {(bill.roomNursingCharges ?? 0) > 0 && (
+                <TableRow>
+                  <TableCell>Nursing Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})</TableCell>
+                  <TableCell className="text-right">₹{bill.roomNursingCharges.toLocaleString()}</TableCell>
+                </TableRow>
+              )}
+              {(bill.rmoCharges ?? 0) > 0 && (
+                <TableRow>
+                  <TableCell>RMO Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})</TableCell>
+                  <TableCell className="text-right">₹{bill.rmoCharges.toLocaleString()}</TableCell>
+                </TableRow>
+              )}
               <TableRow>
                 <TableCell>Doctor Visits ({bill.visits.length})</TableCell>
                 <TableCell className="text-right">₹{bill.doctorCharges}</TableCell>
