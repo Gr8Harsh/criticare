@@ -1164,8 +1164,9 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
         return r.json();
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/patients/${patient.id}/bill`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/patients/${patient.id}`] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.get.path, patient.id] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
       setOpen(false);
       switchForm.reset();
       toast({ title: "Room switched", description: "Patient has been moved to the new room." });
