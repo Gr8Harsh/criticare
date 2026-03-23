@@ -3,7 +3,8 @@ import {
   insertUserSchema, insertRoomTypeSchema, insertPatientSchema, 
   insertDoctorSchema, insertPatientDoctorSchema, insertMedicineSchema, 
   insertVisitSchema, insertPrescriptionSchema, insertChargeSchema, insertProcedureSchema,
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures
+  insertRoomSwitchSchema,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, roomSwitches
 } from './schema';
 
 export const errorSchemas = {
@@ -152,7 +153,26 @@ export const api = {
       responses: {
         201: z.custom<typeof patientDoctors.$inferSelect>(),
       }
-    }
+    },
+    getRoomSwitches: {
+      method: 'GET' as const,
+      path: '/api/patients/:id/room-switches' as const,
+      responses: {
+        200: z.array(z.custom<typeof roomSwitches.$inferSelect>()),
+      }
+    },
+    createRoomSwitch: {
+      method: 'POST' as const,
+      path: '/api/patients/:id/room-switch' as const,
+      input: insertRoomSwitchSchema.omit({ patientId: true, fromRoomTypeId: true }).extend({
+        toRoomTypeId: z.coerce.number(),
+        isHalfDay: z.boolean().default(true),
+        notes: z.string().optional(),
+      }),
+      responses: {
+        201: z.custom<typeof roomSwitches.$inferSelect>(),
+      }
+    },
   },
   doctors: {
     list: {

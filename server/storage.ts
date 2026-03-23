@@ -1,14 +1,14 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames, roomSwitches,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
   type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge,
   type DoctorSurgeryCharge,
   type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery,
-  type SurgeryName
+  type SurgeryName, type RoomSwitch, type InsertRoomSwitch
 } from "@shared/schema";
 import session from "express-session";
 import MemoryStore from "memorystore";
@@ -287,6 +287,15 @@ export class DatabaseStorage {
   }
   async deletePatientSurgery(id: number): Promise<void> {
     await db.delete(patientSurgeries).where(eq(patientSurgeries.id, id));
+  }
+
+  // Room Switches
+  async createRoomSwitch(data: InsertRoomSwitch): Promise<RoomSwitch> {
+    const [sw] = await db.insert(roomSwitches).values(data).returning();
+    return sw;
+  }
+  async getRoomSwitchesByPatient(patientId: number): Promise<RoomSwitch[]> {
+    return await db.select().from(roomSwitches).where(eq(roomSwitches.patientId, patientId));
   }
 }
 

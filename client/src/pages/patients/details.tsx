@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -150,6 +150,7 @@ export default function PatientDetails() {
           <TabsTrigger value="medicines" className="rounded-lg px-5"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
           <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
           <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgery</TabsTrigger>
+          <TabsTrigger value="room-switch" className="rounded-lg px-5"><ArrowRightLeft className="w-4 h-4 mr-2" /> Room Switch</TabsTrigger>
           <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
           <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
         </TabsList>
@@ -159,6 +160,7 @@ export default function PatientDetails() {
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+          <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
         </div>
@@ -1125,6 +1127,168 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
   );
 }
 
+function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roomSwitches: any[], isManager: boolean }) {
+  const { data: user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const canManage = isManager || isAdmin;
+  const { data: roomTypes } = useRoomTypes();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+
+  const switchForm = useForm({
+    defaultValues: { toRoomTypeId: "", isHalfDay: "true", notes: "" }
+  });
+
+  const switchMutation = useMutation({
+    mutationFn: (data: any) =>
+      fetch(`/api/patients/${patient.id}/room-switch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toRoomTypeId: parseInt(data.toRoomTypeId),
+          isHalfDay: data.isHalfDay === "true",
+          notes: data.notes || null,
+        }),
+        credentials: "include",
+      }).then(async (r) => {
+        if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+        return r.json();
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/patients/${patient.id}/bill`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/patients/${patient.id}`] });
+      setOpen(false);
+      switchForm.reset();
+      toast({ title: "Room switched", description: "Patient has been moved to the new room." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const onSubmit = (data: any) => switchMutation.mutate(data);
+
+  const currentRoom = roomTypes?.find((r: any) => r.id === patient.roomTypeId);
+
+  return (
+    <Card className="border-border/50 shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="font-display">Room Switches</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Current room: <span className="font-semibold text-foreground">{currentRoom?.name ?? "Unknown"}</span>
+            {currentRoom && <span className="text-muted-foreground"> — ₹{currentRoom.dailyCharge}/day</span>}
+          </p>
+        </div>
+        {!patient.discharged && canManage && (
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) switchForm.reset(); }}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="hover-elevate" data-testid="button-add-room-switch">
+                <ArrowRightLeft className="w-4 h-4 mr-2" /> Switch Room
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Switch Patient Room</DialogTitle></DialogHeader>
+              <Form {...switchForm}>
+                <form onSubmit={switchForm.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField control={switchForm.control} name="toRoomTypeId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>New Room</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger data-testid="select-new-room"><SelectValue placeholder="Select new room" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {roomTypes?.filter((r: any) => r.id !== patient.roomTypeId).map((r: any) => (
+                            <SelectItem key={r.id} value={r.id.toString()} data-testid={`option-room-${r.id}`}>
+                              {r.name} — ₹{r.dailyCharge}/day
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={switchForm.control} name="isHalfDay" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Switch Type</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger data-testid="select-switch-type"><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="true">Half Day — charges split between both rooms today</SelectItem>
+                          <SelectItem value="false">Full Day — new room charge starts from today</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {field.value === "true"
+                          ? "Today: ½ day charge in current room + ½ day charge in new room."
+                          : "Today and onwards fully charged to the new room."}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={switchForm.control} name="notes" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes (optional)</FormLabel>
+                      <FormControl><Input placeholder="Reason for switch..." {...field} data-testid="input-switch-notes" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <Button type="submit" className="w-full" disabled={switchMutation.isPending} data-testid="button-confirm-room-switch">
+                    {switchMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Confirm Room Switch
+                  </Button>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </CardHeader>
+      <CardContent>
+        {roomSwitches.length === 0 ? (
+          <p className="text-muted-foreground text-sm text-center py-8">No room switches recorded for this patient.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>From Room</TableHead>
+                <TableHead>To Room</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Notes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {roomSwitches.map((sw: any) => {
+                const fromRoom = roomTypes?.find((r: any) => r.id === sw.fromRoomTypeId);
+                const toRoom = roomTypes?.find((r: any) => r.id === sw.toRoomTypeId);
+                return (
+                  <TableRow key={sw.id} data-testid={`row-room-switch-${sw.id}`}>
+                    <TableCell>{format(new Date(sw.switchDate), "MMM dd, yyyy")}</TableCell>
+                    <TableCell>
+                      <span className="font-medium">{fromRoom?.name ?? `Room #${sw.fromRoomTypeId}`}</span>
+                      <span className="text-muted-foreground text-xs ml-1">₹{fromRoom?.dailyCharge}/day</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-medium">{toRoom?.name ?? `Room #${sw.toRoomTypeId}`}</span>
+                      <span className="text-muted-foreground text-xs ml-1">₹{toRoom?.dailyCharge}/day</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={sw.isHalfDay ? "secondary" : "outline"}>
+                        {sw.isHalfDay ? "Half Day" : "Full Day"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{sw.notes || "—"}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function BillView({ patient, bill, printMode = false }: { patient: any, bill: any, printMode?: boolean }) {
   return (
     <Card className={`border-border/50 shadow-md ${printMode ? 'border-none shadow-none' : ''}`}>
@@ -1157,8 +1321,13 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
             </TableHeader>
             <TableBody>
               <TableRow>
-                <TableCell>Room Charges ({bill.daysAdmitted} days)</TableCell>
-                <TableCell className="text-right">₹{bill.roomCharge}</TableCell>
+                <TableCell>
+                  Room Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})
+                  {bill.roomSwitches?.length > 0 && (
+                    <span className="text-xs text-muted-foreground ml-2">— {bill.roomSwitches.length} room switch{bill.roomSwitches.length !== 1 ? "es" : ""}, incl. half-day splits</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">₹{bill.roomCharge.toLocaleString()}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>Doctor Visits ({bill.visits.length})</TableCell>

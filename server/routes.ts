@@ -212,10 +212,38 @@ export async function registerRoutes(
     );
 
     if (roomCharge === 0) {
-      const roomTypes = await storage.getRoomTypes();
-      const roomType = roomTypes.find((r) => r.id === patient.roomTypeId);
-      if (roomType) {
-        roomCharge = roomType.dailyCharge * daysAdmitted;
+      const allRoomTypes = await storage.getRoomTypes();
+      const switches = await storage.getRoomSwitchesByPatient(patientId);
+      switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
+
+      if (switches.length === 0) {
+        const roomType = allRoomTypes.find((r) => r.id === patient.roomTypeId);
+        if (roomType) roomCharge = roomType.dailyCharge * daysAdmitted;
+      } else {
+        let prevDate = admissionDate;
+        let prevRoomTypeId = switches[0].fromRoomTypeId;
+
+        for (const sw of switches) {
+          const switchDate = new Date(sw.switchDate);
+          const oldRate = allRoomTypes.find((r) => r.id === prevRoomTypeId)?.dailyCharge ?? 0;
+          const newRate = allRoomTypes.find((r) => r.id === sw.toRoomTypeId)?.dailyCharge ?? 0;
+          const diffDays = Math.floor((switchDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24));
+
+          if (sw.isHalfDay) {
+            roomCharge += (diffDays + 0.5) * oldRate + 0.5 * newRate;
+            prevDate = new Date(switchDate.getTime() + 1000 * 3600 * 24); // next day
+          } else {
+            roomCharge += diffDays * oldRate;
+            prevDate = switchDate;
+          }
+          prevRoomTypeId = sw.toRoomTypeId;
+        }
+
+        // Final segment: from prevDate to dischargeDate
+        const finalRate = allRoomTypes.find((r) => r.id === prevRoomTypeId)?.dailyCharge ?? 0;
+        const finalDays = Math.max(1, Math.ceil((dischargeDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24)));
+        roomCharge += finalDays * finalRate;
+        roomCharge = Math.round(roomCharge);
       }
     }
 
@@ -235,6 +263,9 @@ export async function registerRoutes(
       procedureCharges +
       surgeryCharges;
 
+    const roomSwitchesList = await storage.getRoomSwitchesByPatient(patientId);
+    roomSwitchesList.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
+
     res.json({
       daysAdmitted,
       roomCharge,
@@ -250,8 +281,43 @@ export async function registerRoutes(
       charges: chargesList,
       procedures: proceduresList,
       surgeries: surgeriesList,
+      roomSwitches: roomSwitchesList,
       patient,
     });
+  });
+
+  app.get('/api/patients/:id/room-switches', async (req, res) => {
+    const patientId = Number(req.params.id);
+    const switches = await storage.getRoomSwitchesByPatient(patientId);
+    switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
+    res.json(switches);
+  });
+
+  app.post('/api/patients/:id/room-switch', async (req, res) => {
+    try {
+      const patientId = Number(req.params.id);
+      const patient = await storage.getPatient(patientId);
+      if (!patient) return res.status(404).json({ message: "Patient not found" });
+      if (patient.discharged) return res.status(400).json({ message: "Cannot switch room for a discharged patient" });
+
+      const { toRoomTypeId, isHalfDay, notes } = req.body;
+      if (!toRoomTypeId) return res.status(400).json({ message: "toRoomTypeId is required" });
+      if (patient.roomTypeId === Number(toRoomTypeId)) return res.status(400).json({ message: "Patient is already in this room type" });
+
+      const sw = await storage.createRoomSwitch({
+        patientId,
+        fromRoomTypeId: patient.roomTypeId,
+        toRoomTypeId: Number(toRoomTypeId),
+        isHalfDay: isHalfDay !== false,
+        notes: notes || null,
+      });
+
+      await storage.updatePatient(patientId, { roomTypeId: Number(toRoomTypeId) });
+
+      res.status(201).json(sw);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
   });
 
   app.post(api.patients.assignDoctor.path, async (req, res) => {
