@@ -227,37 +227,62 @@ export async function registerRoutes(
 
       // Helper to accumulate all room-based charges for a segment
       const addSegmentCharges = (roomTypeId: number, days: number) => {
+        if (days <= 0) return;
         const rt = allRoomTypes.find((r) => r.id === roomTypeId);
         if (!rt) return;
         roomCharge += days * rt.dailyCharge;
-        bedCharges += days * rt.bedCharge;
-        roomNursingCharges += days * rt.nursingCharge;
-        rmoCharges += days * rt.rmoCharge;
+        bedCharges += days * (rt.bedCharge ?? 0);
+        roomNursingCharges += days * (rt.nursingCharge ?? 0);
+        rmoCharges += days * (rt.rmoCharge ?? 0);
       };
+
+      // Normalize a date to midnight (calendar day boundary) for clean day arithmetic
+      const toMidnight = (d: Date) => {
+        const m = new Date(d);
+        m.setHours(0, 0, 0, 0);
+        return m;
+      };
+      const calendarDayDiff = (a: Date, b: Date) =>
+        Math.round((b.getTime() - a.getTime()) / (1000 * 3600 * 24));
 
       if (switches.length === 0) {
         addSegmentCharges(patient.roomTypeId, daysAdmitted);
       } else {
-        let prevDate = admissionDate;
+        // Work in calendar days (midnight boundaries) to avoid time-of-day drift
+        let prevDay = toMidnight(admissionDate);
+        const dischargeDay = toMidnight(dischargeDate);
         let prevRoomTypeId = switches[0].fromRoomTypeId;
+        let lastRoomTypeId = switches[switches.length - 1].toRoomTypeId;
 
         for (const sw of switches) {
-          const switchDate = new Date(sw.switchDate);
-          const diffDays = Math.floor((switchDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24));
+          const switchDay = toMidnight(new Date(sw.switchDate));
+          const diffDays = Math.max(0, calendarDayDiff(prevDay, switchDay));
 
           if (sw.isHalfDay) {
+            // Charge diffDays in old room + half the switch day, half in new room
             addSegmentCharges(prevRoomTypeId, diffDays + 0.5);
             addSegmentCharges(sw.toRoomTypeId, 0.5);
-            prevDate = new Date(switchDate.getTime() + 1000 * 3600 * 24);
+            // Next segment starts from the day after the switch day
+            const nextDay = new Date(switchDay);
+            nextDay.setDate(nextDay.getDate() + 1);
+            prevDay = nextDay;
           } else {
+            // Charge diffDays in old room; switch day belongs to new room
             addSegmentCharges(prevRoomTypeId, diffDays);
-            prevDate = switchDate;
+            prevDay = switchDay;
           }
           prevRoomTypeId = sw.toRoomTypeId;
+          lastRoomTypeId = sw.toRoomTypeId;
         }
 
-        const finalDays = Math.max(1, Math.ceil((dischargeDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24)));
+        // Final segment: remaining days from last boundary to discharge day
+        const finalDays = Math.max(0, calendarDayDiff(prevDay, dischargeDay));
         addSegmentCharges(prevRoomTypeId, finalDays);
+
+        // Ensure minimum 1 day billing (e.g. all switches on same calendar day)
+        if (roomCharge === 0) {
+          addSegmentCharges(lastRoomTypeId, 1);
+        }
       }
 
       roomCharge = Math.round(roomCharge);
