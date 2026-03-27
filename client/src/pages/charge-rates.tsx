@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Edit2, BedDouble, Stethoscope, HeartPulse, Info } from "lucide-react";
+import { Loader2, Edit2, Stethoscope, HeartPulse, Info } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,13 +16,11 @@ import { api } from "@shared/routes";
 import { useAuth } from "@/hooks/use-auth";
 
 const rateSchema = z.object({
-  bedCharge: z.coerce.number().min(0, "Must be 0 or more"),
   nursingCharge: z.coerce.number().min(0, "Must be 0 or more"),
   rmoCharge: z.coerce.number().min(0, "Must be 0 or more"),
 });
 
 const RATE_FIELDS = [
-  { name: "bedCharge" as const, label: "Bed Charge", icon: BedDouble, desc: "Charged per day for bed occupancy" },
   { name: "nursingCharge" as const, label: "Nursing Charge", icon: Stethoscope, desc: "Charged per day for nursing care" },
   { name: "rmoCharge" as const, label: "RMO Charge", icon: HeartPulse, desc: "Charged per day for RMO services" },
 ];
@@ -35,11 +33,11 @@ export default function ChargeRatesPage() {
   const { toast } = useToast();
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, bedCharge, nursingCharge, rmoCharge }: { id: number; bedCharge: number; nursingCharge: number; rmoCharge: number }) => {
+    mutationFn: async ({ id, nursingCharge, rmoCharge }: { id: number; nursingCharge: number; rmoCharge: number }) => {
       const res = await fetch(`/api/admin/room-types/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bedCharge, nursingCharge, rmoCharge }),
+        body: JSON.stringify({ nursingCharge, rmoCharge }),
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to update charge rates");
@@ -55,13 +53,12 @@ export default function ChargeRatesPage() {
 
   const form = useForm({
     resolver: zodResolver(rateSchema),
-    defaultValues: { bedCharge: 0, nursingCharge: 0, rmoCharge: 0 },
+    defaultValues: { nursingCharge: 0, rmoCharge: 0 },
   });
 
   const openEdit = (rt: any) => {
     setEditingRoom(rt);
     form.reset({
-      bedCharge: rt.bedCharge ?? 0,
       nursingCharge: rt.nursingCharge ?? 0,
       rmoCharge: rt.rmoCharge ?? 0,
     });
@@ -115,7 +112,6 @@ export default function ChargeRatesPage() {
                 <TableRow>
                   <TableHead>Room Type</TableHead>
                   <TableHead className="text-right">Room Rate (₹/day)</TableHead>
-                  <TableHead className="text-right">Bed (₹/day)</TableHead>
                   <TableHead className="text-right">Nursing (₹/day)</TableHead>
                   <TableHead className="text-right">RMO (₹/day)</TableHead>
                   <TableHead className="text-right">Total Extra/day</TableHead>
@@ -124,16 +120,11 @@ export default function ChargeRatesPage() {
               </TableHeader>
               <TableBody>
                 {roomTypes?.map((rt) => {
-                  const extra = (rt.bedCharge ?? 0) + (rt.nursingCharge ?? 0) + (rt.rmoCharge ?? 0);
+                  const extra = (rt.nursingCharge ?? 0) + (rt.rmoCharge ?? 0);
                   return (
                     <TableRow key={rt.id} data-testid={`row-charge-rate-${rt.id}`}>
                       <TableCell className="font-bold">{rt.name}</TableCell>
                       <TableCell className="text-right text-muted-foreground">₹{(rt.dailyCharge ?? 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right">
-                        {(rt.bedCharge ?? 0) > 0
-                          ? <span className="font-medium">₹{rt.bedCharge.toLocaleString()}</span>
-                          : <Badge variant="outline" className="text-xs font-normal text-muted-foreground">Not set</Badge>}
-                      </TableCell>
                       <TableCell className="text-right">
                         {(rt.nursingCharge ?? 0) > 0
                           ? <span className="font-medium">₹{rt.nursingCharge.toLocaleString()}</span>

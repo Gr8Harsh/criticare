@@ -124,10 +124,6 @@ export default function PatientDetails() {
               <span className="text-muted-foreground">Room Charge</span>
               <span className="font-medium">₹{(bill.roomCharge ?? 0).toLocaleString()}</span>
             </div>
-            {(bill.bedCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Bed Charge</span>
-              <span className="font-medium">₹{bill.bedCharges.toLocaleString()}</span>
-            </div>}
             {(bill.roomNursingCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Nursing Charge</span>
               <span className="font-medium">₹{bill.roomNursingCharges.toLocaleString()}</span>
@@ -1338,12 +1334,6 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
                 </TableCell>
                 <TableCell className="text-right">₹{bill.roomCharge.toLocaleString()}</TableCell>
               </TableRow>
-              {(bill.bedCharges ?? 0) > 0 && (
-                <TableRow>
-                  <TableCell>Bed Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})</TableCell>
-                  <TableCell className="text-right">₹{bill.bedCharges.toLocaleString()}</TableCell>
-                </TableRow>
-              )}
               {(bill.roomNursingCharges ?? 0) > 0 && (
                 <TableRow>
                   <TableCell>Nursing Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})</TableCell>

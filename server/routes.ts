@@ -109,7 +109,6 @@ export async function registerRoutes(
       const id = Number(req.params.id);
       const fields = z.object({
         dailyCharge: z.coerce.number().optional(),
-        bedCharge: z.coerce.number().optional(),
         nursingCharge: z.coerce.number().optional(),
         rmoCharge: z.coerce.number().optional(),
       }).parse(req.body);
@@ -216,7 +215,6 @@ export async function registerRoutes(
       ),
     );
 
-    let bedCharges = 0;
     let roomNursingCharges = 0;
     let rmoCharges = 0;
 
@@ -231,7 +229,6 @@ export async function registerRoutes(
         const rt = allRoomTypes.find((r) => r.id === roomTypeId);
         if (!rt) return;
         roomCharge += days * rt.dailyCharge;
-        bedCharges += days * (rt.bedCharge ?? 0);
         roomNursingCharges += days * (rt.nursingCharge ?? 0);
         rmoCharges += days * (rt.rmoCharge ?? 0);
       };
@@ -286,7 +283,6 @@ export async function registerRoutes(
       }
 
       roomCharge = Math.round(roomCharge);
-      bedCharges = Math.round(bedCharges);
       roomNursingCharges = Math.round(roomNursingCharges);
       rmoCharges = Math.round(rmoCharges);
     }
@@ -300,7 +296,6 @@ export async function registerRoutes(
 
     const grandTotal =
       roomCharge +
-      bedCharges +
       roomNursingCharges +
       rmoCharges +
       doctorCharges +
@@ -316,7 +311,6 @@ export async function registerRoutes(
     res.json({
       daysAdmitted,
       roomCharge,
-      bedCharges,
       roomNursingCharges,
       rmoCharges,
       doctorCharges,

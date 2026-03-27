@@ -100,7 +100,6 @@ export const api = {
         200: z.object({
           daysAdmitted: z.number(),
           roomCharge: z.number(),
-          bedCharges: z.number(),
           roomNursingCharges: z.number(),
           rmoCharges: z.number(),
           doctorCharges: z.number(),
@@ -242,7 +241,6 @@ export const api = {
       path: '/api/room-types' as const,
       input: insertRoomTypeSchema.extend({
         dailyCharge: z.coerce.number(),
-        bedCharge: z.coerce.number().default(0),
         nursingCharge: z.coerce.number().default(0),
         rmoCharge: z.coerce.number().default(0),
       }),

@@ -14,7 +14,6 @@ export const roomTypes = pgTable("room_types", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   dailyCharge: integer("daily_charge").notNull(),
-  bedCharge: integer("bed_charge").notNull().default(0),
   nursingCharge: integer("nursing_charge").notNull().default(0),
   rmoCharge: integer("rmo_charge").notNull().default(0),
 });
