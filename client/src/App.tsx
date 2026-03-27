@@ -31,6 +31,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 }
 
 import RoomTypesPage from "@/pages/room-types";
+import ChargeRatesPage from "@/pages/charge-rates";
 import ProceduresPage from "@/pages/procedures/index";
 import SurgeriesPage from "@/pages/surgeries/index";
 
@@ -63,6 +64,9 @@ function Router() {
       </Route>
       <Route path="/room-types">
         <Shell><ProtectedRoute component={RoomTypesPage} /></Shell>
+      </Route>
+      <Route path="/charge-rates">
+        <Shell><ProtectedRoute component={ChargeRatesPage} /></Shell>
       </Route>
       
       <Route component={NotFound} />

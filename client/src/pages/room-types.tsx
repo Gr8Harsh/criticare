@@ -15,27 +15,14 @@ import { api } from "@shared/routes";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 
-const chargeSchema = z.object({
-  dailyCharge: z.coerce.number().min(0),
-  bedCharge: z.coerce.number().min(0),
-  nursingCharge: z.coerce.number().min(0),
-  rmoCharge: z.coerce.number().min(0),
+const editSchema = z.object({
+  dailyCharge: z.coerce.number().min(0, "Must be 0 or more"),
 });
 
 const addSchema = z.object({
   name: z.string().min(1, "Room type name is required"),
   dailyCharge: z.coerce.number().min(0),
-  bedCharge: z.coerce.number().min(0).default(0),
-  nursingCharge: z.coerce.number().min(0).default(0),
-  rmoCharge: z.coerce.number().min(0).default(0),
 });
-
-const CHARGE_FIELDS = [
-  { name: "dailyCharge" as const, label: "Room Charge (₹/day)" },
-  { name: "bedCharge" as const, label: "Bed Charge (₹/day)" },
-  { name: "nursingCharge" as const, label: "Nursing Charge (₹/day)" },
-  { name: "rmoCharge" as const, label: "RMO Charge (₹/day)" },
-];
 
 export default function RoomTypesPage() {
   const { data: user } = useAuth();
@@ -46,24 +33,22 @@ export default function RoomTypesPage() {
   const { toast } = useToast();
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...fields }: { id: number; dailyCharge: number; bedCharge: number; nursingCharge: number; rmoCharge: number }) => {
+    mutationFn: async ({ id, dailyCharge }: { id: number; dailyCharge: number }) => {
       const res = await fetch(`/api/admin/room-types/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
+        body: JSON.stringify({ dailyCharge }),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to update room charges");
+      if (!res.ok) throw new Error("Failed to update room");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.roomTypes.list.path] });
-      toast({ title: "Success", description: "Room charges updated." });
+      toast({ title: "Success", description: "Room charge updated." });
       setEditingRoom(null);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update room charges.", variant: "destructive" });
-    },
+    onError: () => toast({ title: "Error", description: "Failed to update room.", variant: "destructive" }),
   });
 
   const createMutation = useMutation({
@@ -76,29 +61,22 @@ export default function RoomTypesPage() {
       setAddOpen(false);
       addForm.reset();
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to add room type.", variant: "destructive" });
-    },
+    onError: () => toast({ title: "Error", description: "Failed to add room type.", variant: "destructive" }),
   });
 
   const editForm = useForm({
-    resolver: zodResolver(chargeSchema),
-    defaultValues: { dailyCharge: 0, bedCharge: 0, nursingCharge: 0, rmoCharge: 0 },
+    resolver: zodResolver(editSchema),
+    defaultValues: { dailyCharge: 0 },
   });
 
   const addForm = useForm({
     resolver: zodResolver(addSchema),
-    defaultValues: { name: "", dailyCharge: 0, bedCharge: 0, nursingCharge: 0, rmoCharge: 0 },
+    defaultValues: { name: "", dailyCharge: 0 },
   });
 
   const openEdit = (rt: any) => {
     setEditingRoom(rt);
-    editForm.reset({
-      dailyCharge: rt.dailyCharge,
-      bedCharge: rt.bedCharge ?? 0,
-      nursingCharge: rt.nursingCharge ?? 0,
-      rmoCharge: rt.rmoCharge ?? 0,
-    });
+    editForm.reset({ dailyCharge: rt.dailyCharge });
   };
 
   if (user?.role !== "ADMIN") return <div className="p-8 text-center text-destructive font-bold">Unauthorized Access</div>;
@@ -108,7 +86,7 @@ export default function RoomTypesPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-display font-bold tracking-tight">Room Configuration</h1>
-          <p className="text-muted-foreground">Manage room types and their daily charge breakdown.</p>
+          <p className="text-muted-foreground">Manage room types and their base daily room charges.</p>
         </div>
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -128,17 +106,14 @@ export default function RoomTypesPage() {
                     <FormMessage />
                   </FormItem>
                 )} />
-                <div className="grid grid-cols-2 gap-3">
-                  {CHARGE_FIELDS.map(({ name, label }) => (
-                    <FormField key={name} control={addForm.control} name={name} render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{label}</FormLabel>
-                        <FormControl><Input data-testid={`input-add-${name}`} type="number" min={0} placeholder="0" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                  ))}
-                </div>
+                <FormField control={addForm.control} name="dailyCharge" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Room Charge (₹/day)</FormLabel>
+                    <FormControl><Input data-testid="input-add-dailyCharge" type="number" min={0} placeholder="0" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <p className="text-xs text-muted-foreground">Bed, Nursing, and RMO charges can be configured separately under <strong>Charge Rates</strong>.</p>
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
                   <Button data-testid="button-submit-room-type" type="submit" disabled={createMutation.isPending}>
@@ -155,20 +130,17 @@ export default function RoomTypesPage() {
       {/* Edit Dialog */}
       <Dialog open={!!editingRoom} onOpenChange={(v) => { if (!v) setEditingRoom(null); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit Charges — {editingRoom?.name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Edit Room Charge — {editingRoom?.name}</DialogTitle></DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit((d) => updateMutation.mutate({ id: editingRoom.id, ...d }))} className="space-y-4 pt-2">
-              <div className="grid grid-cols-2 gap-3">
-                {CHARGE_FIELDS.map(({ name, label }) => (
-                  <FormField key={name} control={editForm.control} name={name} render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{label}</FormLabel>
-                      <FormControl><Input data-testid={`input-edit-${name}`} type="number" min={0} {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                ))}
-              </div>
+              <FormField control={editForm.control} name="dailyCharge" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Room Charge (₹/day)</FormLabel>
+                  <FormControl><Input data-testid="input-edit-dailyCharge" type="number" min={0} {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <p className="text-xs text-muted-foreground">To configure Bed, Nursing, and RMO charges, go to <strong>Charge Rates</strong> in the menu.</p>
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={() => setEditingRoom(null)}>Cancel</Button>
                 <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-room-charges">
@@ -190,39 +162,27 @@ export default function RoomTypesPage() {
               <TableHeader className="bg-secondary/40">
                 <TableRow>
                   <TableHead>Room Type</TableHead>
-                  <TableHead className="text-right">Room (₹/day)</TableHead>
-                  <TableHead className="text-right">Bed (₹/day)</TableHead>
-                  <TableHead className="text-right">Nursing (₹/day)</TableHead>
-                  <TableHead className="text-right">RMO (₹/day)</TableHead>
-                  <TableHead className="text-right">Total/day</TableHead>
+                  <TableHead className="text-right">Room Charge (₹/day)</TableHead>
                   <TableHead className="w-[100px] text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {roomTypes?.map((rt) => {
-                  const total = (rt.dailyCharge ?? 0) + (rt.bedCharge ?? 0) + (rt.nursingCharge ?? 0) + (rt.rmoCharge ?? 0);
-                  return (
-                    <TableRow key={rt.id} data-testid={`row-room-type-${rt.id}`}>
-                      <TableCell className="font-bold">{rt.name}</TableCell>
-                      <TableCell className="text-right">₹{(rt.dailyCharge ?? 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">₹{(rt.bedCharge ?? 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">₹{(rt.nursingCharge ?? 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">₹{(rt.rmoCharge ?? 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-semibold text-primary">₹{total.toLocaleString()}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          data-testid={`button-edit-room-type-${rt.id}`}
-                          size="sm"
-                          variant="ghost"
-                          className="hover-elevate h-8 gap-2"
-                          onClick={() => openEdit(rt)}
-                        >
-                          <Edit2 className="w-3.5 h-3.5" /> Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {roomTypes?.map((rt) => (
+                  <TableRow key={rt.id} data-testid={`row-room-type-${rt.id}`}>
+                    <TableCell className="font-bold">{rt.name}</TableCell>
+                    <TableCell className="text-right font-semibold text-primary">₹{(rt.dailyCharge ?? 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        data-testid={`button-edit-room-type-${rt.id}`}
+                        size="sm" variant="ghost"
+                        className="hover-elevate h-8 gap-2"
+                        onClick={() => openEdit(rt)}
+                      >
+                        <Edit2 className="w-3.5 h-3.5" /> Edit
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           )}
