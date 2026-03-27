@@ -24,7 +24,7 @@ export function AppSidebar() {
     { title: "Procedures", url: "/procedures", icon: Stethoscope, show: isManager },
     { title: "Surgeries", url: "/surgeries", icon: Scissors, show: isManager },
     { title: "Room Configuration", url: "/room-types", icon: DoorOpen, show: isAdmin },
-    { title: "Charge Rates", url: "/charge-rates", icon: IndianRupee, show: isAdmin },
+    { title: "Charge Rates", url: "/charge-rates", icon: IndianRupee, show: isManager },
   ];
 
   return (

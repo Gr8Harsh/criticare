@@ -67,7 +67,9 @@ export default function ChargeRatesPage() {
     });
   };
 
-  if (user?.role !== "ADMIN") return <div className="p-8 text-center text-destructive font-bold">Unauthorized Access</div>;
+  const isAdmin = user?.role === "ADMIN";
+  const isManager = user?.role === "MANAGER" || isAdmin;
+  if (!isManager) return <div className="p-8 text-center text-destructive font-bold">Unauthorized Access</div>;
 
   return (
     <div className="space-y-6">
@@ -117,7 +119,7 @@ export default function ChargeRatesPage() {
                   <TableHead className="text-right">Nursing (₹/day)</TableHead>
                   <TableHead className="text-right">RMO (₹/day)</TableHead>
                   <TableHead className="text-right">Total Extra/day</TableHead>
-                  <TableHead className="w-[100px] text-right">Action</TableHead>
+                  {isAdmin && <TableHead className="w-[100px] text-right">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -147,16 +149,18 @@ export default function ChargeRatesPage() {
                           ? <span className="font-semibold text-primary">₹{extra.toLocaleString()}</span>
                           : <span className="text-muted-foreground text-sm">—</span>}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          data-testid={`button-edit-charge-rate-${rt.id}`}
-                          size="sm" variant="ghost"
-                          className="hover-elevate h-8 gap-2"
-                          onClick={() => openEdit(rt)}
-                        >
-                          <Edit2 className="w-3.5 h-3.5" /> Edit
-                        </Button>
-                      </TableCell>
+                      {isAdmin && (
+                        <TableCell className="text-right">
+                          <Button
+                            data-testid={`button-edit-charge-rate-${rt.id}`}
+                            size="sm" variant="ghost"
+                            className="hover-elevate h-8 gap-2"
+                            onClick={() => openEdit(rt)}
+                          >
+                            <Edit2 className="w-3.5 h-3.5" /> Edit
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
