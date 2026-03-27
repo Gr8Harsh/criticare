@@ -34,6 +34,9 @@ export const patients = pgTable("patients", {
   bedNumber: text("bed_number").notNull(),
   discharged: boolean("discharged").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  bedChargeOverride: integer("bed_charge_override"),
+  nursingChargeOverride: integer("nursing_charge_override"),
+  rmoChargeOverride: integer("rmo_charge_override"),
 });
 
 export const doctors = pgTable("doctors", {

@@ -226,14 +226,15 @@ export async function registerRoutes(
       switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
 
       // Helper to accumulate all room-based charges for a segment
+      // Per-patient overrides take precedence over room type defaults
       const addSegmentCharges = (roomTypeId: number, days: number) => {
         if (days <= 0) return;
         const rt = allRoomTypes.find((r) => r.id === roomTypeId);
         if (!rt) return;
         roomCharge += days * rt.dailyCharge;
-        bedCharges += days * (rt.bedCharge ?? 0);
-        roomNursingCharges += days * (rt.nursingCharge ?? 0);
-        rmoCharges += days * (rt.rmoCharge ?? 0);
+        bedCharges += days * (patient.bedChargeOverride ?? rt.bedCharge ?? 0);
+        roomNursingCharges += days * (patient.nursingChargeOverride ?? rt.nursingCharge ?? 0);
+        rmoCharges += days * (patient.rmoChargeOverride ?? rt.rmoCharge ?? 0);
       };
 
       // Normalize a date to midnight (calendar day boundary) for clean day arithmetic
