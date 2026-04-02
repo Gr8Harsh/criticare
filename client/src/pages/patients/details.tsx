@@ -1159,6 +1159,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         roomCharge: Math.round(((oldRt?.dailyCharge ?? 0) + (newRt?.dailyCharge ?? 0)) / 2),
         nursingCharge: Math.round(((oldRt?.nursingCharge ?? 0) + (newRt?.nursingCharge ?? 0)) / 2),
         rmoCharge: Math.round(((oldRt?.rmoCharge ?? 0) + (newRt?.rmoCharge ?? 0)) / 2),
+        visitCharge: Math.round(((oldRt?.visitCharge ?? 0) + (newRt?.visitCharge ?? 0)) / 2),
         isComputed: true,
       });
     } else {
@@ -1173,6 +1174,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         roomCharge: rt?.dailyCharge ?? 0,
         nursingCharge: rt?.nursingCharge ?? 0,
         rmoCharge: rt?.rmoCharge ?? 0,
+        visitCharge: rt?.visitCharge ?? 0,
         isComputed: true,
       });
     }
@@ -1192,7 +1194,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
   const [editing, setEditing] = useState<any | null>(null);
 
   const form = useForm({
-    defaultValues: { date: format(new Date(), "yyyy-MM-dd"), roomTypeId: "", roomCharge: 0, nursingCharge: 0, rmoCharge: 0, notes: "" },
+    defaultValues: { date: format(new Date(), "yyyy-MM-dd"), roomTypeId: "", roomCharge: 0, nursingCharge: 0, rmoCharge: 0, visitCharge: 0, notes: "" },
   });
 
   const selectedRoomTypeId = form.watch("roomTypeId");
@@ -1204,13 +1206,14 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
         form.setValue("roomCharge", rt.dailyCharge ?? 0);
         form.setValue("nursingCharge", rt.nursingCharge ?? 0);
         form.setValue("rmoCharge", rt.rmoCharge ?? 0);
+        form.setValue("visitCharge", rt.visitCharge ?? 0);
       }
     }
   }, [selectedRoomTypeId, roomTypes]);
 
   const openAdd = () => {
     setEditing(null);
-    form.reset({ date: format(new Date(), "yyyy-MM-dd"), roomTypeId: String(patient.roomTypeId ?? ""), roomCharge: 0, nursingCharge: 0, rmoCharge: 0, notes: "" });
+    form.reset({ date: format(new Date(), "yyyy-MM-dd"), roomTypeId: String(patient.roomTypeId ?? ""), roomCharge: 0, nursingCharge: 0, rmoCharge: 0, visitCharge: 0, notes: "" });
     setOpen(true);
   };
 
@@ -1222,6 +1225,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
       roomCharge: rc.roomCharge,
       nursingCharge: rc.nursingCharge,
       rmoCharge: rc.rmoCharge,
+      visitCharge: rc.visitCharge ?? 0,
       notes: rc.notes ?? "",
     });
     setOpen(true);
@@ -1236,6 +1240,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
       roomCharge: rc.roomCharge,
       nursingCharge: rc.nursingCharge,
       rmoCharge: rc.rmoCharge,
+      visitCharge: rc.visitCharge ?? 0,
       notes: "",
     });
     setOpen(true);
@@ -1257,6 +1262,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
           roomCharge: Number(values.roomCharge),
           nursingCharge: Number(values.nursingCharge),
           rmoCharge: Number(values.rmoCharge),
+          visitCharge: Number(values.visitCharge ?? 0),
           notes: values.notes || null,
         }),
       });
@@ -1293,6 +1299,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
   const totalRoom = displayRows.reduce((s: number, r: any) => s + (r.roomCharge ?? 0), 0);
   const totalNursing = displayRows.reduce((s: number, r: any) => s + (r.nursingCharge ?? 0), 0);
   const totalRmo = displayRows.reduce((s: number, r: any) => s + (r.rmoCharge ?? 0), 0);
+  const totalVisit = displayRows.reduce((s: number, r: any) => s + (r.visitCharge ?? 0), 0);
 
   return (
     <Card className="border-border/50 shadow-md">
@@ -1332,6 +1339,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                   <TableHead className="text-right">Room (₹)</TableHead>
                   <TableHead className="text-right">Nursing (₹)</TableHead>
                   <TableHead className="text-right">RMO (₹)</TableHead>
+                  <TableHead className="text-right">Visit (₹)</TableHead>
                   <TableHead className="text-right">Total (₹)</TableHead>
                   {canManage && !patient.discharged && <TableHead className="w-[80px]" />}
                 </TableRow>
@@ -1341,7 +1349,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                   const rtName = hasExplicit
                     ? (roomTypes?.find((r: any) => r.id === rc.roomTypeId)?.name ?? "—")
                     : rc.roomTypeName;
-                  const rowTotal = (rc.roomCharge ?? 0) + (rc.nursingCharge ?? 0) + (rc.rmoCharge ?? 0);
+                  const rowTotal = (rc.roomCharge ?? 0) + (rc.nursingCharge ?? 0) + (rc.rmoCharge ?? 0) + (rc.visitCharge ?? 0);
                   const isAutoRow = !hasExplicit;
                   return (
                     <TableRow key={hasExplicit ? rc.id : idx} data-testid={hasExplicit ? `row-room-charge-${rc.id}` : `row-room-charge-auto-${idx}`}>
@@ -1350,6 +1358,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                       <TableCell className="text-right">₹{(rc.roomCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.nursingCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.rmoCharge ?? 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{(rc.visitCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right font-semibold text-primary">₹{rowTotal.toLocaleString()}</TableCell>
                       {canManage && !patient.discharged && (
                         <TableCell>
@@ -1378,7 +1387,8 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
               <span>Room: ₹{totalRoom.toLocaleString()}</span>
               <span>Nursing: ₹{totalNursing.toLocaleString()}</span>
               <span>RMO: ₹{totalRmo.toLocaleString()}</span>
-              <span className="text-primary text-base">Total: ₹{(totalRoom + totalNursing + totalRmo).toLocaleString()}</span>
+              <span>Visit: ₹{totalVisit.toLocaleString()}</span>
+              <span className="text-primary text-base">Total: ₹{(totalRoom + totalNursing + totalRmo + totalVisit).toLocaleString()}</span>
             </div>
           </>
         )}

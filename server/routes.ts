@@ -111,6 +111,7 @@ export async function registerRoutes(
         dailyCharge: z.coerce.number().optional(),
         nursingCharge: z.coerce.number().optional(),
         rmoCharge: z.coerce.number().optional(),
+        visitCharge: z.coerce.number().optional(),
       }).parse(req.body);
       const [updated] = await db.update(roomTypes).set(fields).where(eq(roomTypes.id, id)).returning();
       res.json(updated);
@@ -216,6 +217,7 @@ export async function registerRoutes(
     let roomCharge = 0;
     let roomNursingCharges = 0;
     let rmoCharges = 0;
+    let visitCharges = 0;
 
     // Fetch explicit per-day room charges
     const roomChargesList = await storage.getPatientRoomCharges(patientId);
@@ -226,6 +228,7 @@ export async function registerRoutes(
         roomCharge += rc.roomCharge;
         roomNursingCharges += rc.nursingCharge;
         rmoCharges += rc.rmoCharge;
+        visitCharges += (rc.visitCharge ?? 0);
       });
     } else {
       // Auto-calculate from room type and room switches
@@ -240,6 +243,7 @@ export async function registerRoutes(
         roomCharge += days * rt.dailyCharge;
         roomNursingCharges += days * (rt.nursingCharge ?? 0);
         rmoCharges += days * (rt.rmoCharge ?? 0);
+        visitCharges += days * (rt.visitCharge ?? 0);
       };
 
       const toMidnight = (d: Date) => {
@@ -283,6 +287,7 @@ export async function registerRoutes(
       roomCharge = Math.round(roomCharge);
       roomNursingCharges = Math.round(roomNursingCharges);
       rmoCharges = Math.round(rmoCharges);
+      visitCharges = Math.round(visitCharges);
     }
 
     const procedureCharges = proceduresList.reduce((acc, p) => acc + p.cost, 0);
@@ -296,6 +301,7 @@ export async function registerRoutes(
       roomCharge +
       roomNursingCharges +
       rmoCharges +
+      visitCharges +
       doctorCharges +
       medicineCharges +
       nursingCharges +
@@ -311,6 +317,7 @@ export async function registerRoutes(
       roomCharge,
       roomNursingCharges,
       rmoCharges,
+      visitCharges,
       doctorCharges,
       medicineCharges,
       nursingCharges,
@@ -375,7 +382,7 @@ export async function registerRoutes(
       const patientId = Number(req.params.id);
       const patient = await storage.getPatient(patientId);
       if (!patient) return res.status(404).json({ message: "Patient not found" });
-      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, notes } = req.body;
+      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, visitCharge, notes } = req.body;
       const row = await storage.createPatientRoomCharge({
         patientId,
         date: new Date(date),
@@ -383,6 +390,7 @@ export async function registerRoutes(
         roomCharge: Number(roomCharge ?? 0),
         nursingCharge: Number(nursingCharge ?? 0),
         rmoCharge: Number(rmoCharge ?? 0),
+        visitCharge: Number(visitCharge ?? 0),
         notes: notes || null,
       });
       res.status(201).json(row);
@@ -394,13 +402,14 @@ export async function registerRoutes(
   app.put('/api/patients/:id/room-charges/:chargeId', async (req, res) => {
     try {
       const id = Number(req.params.chargeId);
-      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, notes } = req.body;
+      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, visitCharge, notes } = req.body;
       const row = await storage.updatePatientRoomCharge(id, {
         date: date ? new Date(date) : undefined,
         roomTypeId: roomTypeId ? Number(roomTypeId) : null,
         roomCharge: roomCharge !== undefined ? Number(roomCharge) : undefined,
         nursingCharge: nursingCharge !== undefined ? Number(nursingCharge) : undefined,
         rmoCharge: rmoCharge !== undefined ? Number(rmoCharge) : undefined,
+        visitCharge: visitCharge !== undefined ? Number(visitCharge) : undefined,
         notes: notes !== undefined ? (notes || null) : undefined,
       });
       res.json(row);

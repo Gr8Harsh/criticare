@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Edit2, Stethoscope, HeartPulse, Info } from "lucide-react";
+import { Loader2, Edit2, Stethoscope, HeartPulse, Info, UserCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,11 +18,13 @@ import { useAuth } from "@/hooks/use-auth";
 const rateSchema = z.object({
   nursingCharge: z.coerce.number().min(0, "Must be 0 or more"),
   rmoCharge: z.coerce.number().min(0, "Must be 0 or more"),
+  visitCharge: z.coerce.number().min(0, "Must be 0 or more"),
 });
 
 const RATE_FIELDS = [
   { name: "nursingCharge" as const, label: "Nursing Charge", icon: Stethoscope, desc: "Charged per day for nursing care" },
   { name: "rmoCharge" as const, label: "RMO Charge", icon: HeartPulse, desc: "Charged per day for RMO services" },
+  { name: "visitCharge" as const, label: "Visit Charge", icon: UserCheck, desc: "Charged per day for doctor visit" },
 ];
 
 export default function ChargeRatesPage() {
@@ -33,11 +35,11 @@ export default function ChargeRatesPage() {
   const { toast } = useToast();
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, nursingCharge, rmoCharge }: { id: number; nursingCharge: number; rmoCharge: number }) => {
+    mutationFn: async ({ id, nursingCharge, rmoCharge, visitCharge }: { id: number; nursingCharge: number; rmoCharge: number; visitCharge: number }) => {
       const res = await fetch(`/api/admin/room-types/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nursingCharge, rmoCharge }),
+        body: JSON.stringify({ nursingCharge, rmoCharge, visitCharge }),
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to update charge rates");
@@ -53,7 +55,7 @@ export default function ChargeRatesPage() {
 
   const form = useForm({
     resolver: zodResolver(rateSchema),
-    defaultValues: { nursingCharge: 0, rmoCharge: 0 },
+    defaultValues: { nursingCharge: 0, rmoCharge: 0, visitCharge: 0 },
   });
 
   const openEdit = (rt: any) => {
@@ -61,6 +63,7 @@ export default function ChargeRatesPage() {
     form.reset({
       nursingCharge: rt.nursingCharge ?? 0,
       rmoCharge: rt.rmoCharge ?? 0,
+      visitCharge: rt.visitCharge ?? 0,
     });
   };
 
@@ -72,7 +75,7 @@ export default function ChargeRatesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-display font-bold tracking-tight">Charge Rates</h1>
-        <p className="text-muted-foreground">Configure daily Bed, Nursing, and RMO charges per room type. These are automatically added to the patient's bill based on their current room.</p>
+        <p className="text-muted-foreground">Configure daily Bed, Nursing, RMO, and Visit charges per room type. These are automatically added to the patient's bill based on their current room.</p>
       </div>
 
       <Card className="border-border/50 bg-primary/5 shadow-none">
@@ -84,7 +87,7 @@ export default function ChargeRatesPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         {RATE_FIELDS.map(({ name, label, icon: Icon, desc }) => (
           <Card key={name} className="border-border/50 shadow-sm">
             <CardHeader className="pb-2">
@@ -114,13 +117,14 @@ export default function ChargeRatesPage() {
                   <TableHead className="text-right">Room Rate (₹/day)</TableHead>
                   <TableHead className="text-right">Nursing (₹/day)</TableHead>
                   <TableHead className="text-right">RMO (₹/day)</TableHead>
+                  <TableHead className="text-right">Visit (₹/day)</TableHead>
                   <TableHead className="text-right">Total Extra/day</TableHead>
                   {isAdmin && <TableHead className="w-[100px] text-right">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {roomTypes?.map((rt) => {
-                  const extra = (rt.nursingCharge ?? 0) + (rt.rmoCharge ?? 0);
+                  const extra = (rt.nursingCharge ?? 0) + (rt.rmoCharge ?? 0) + (rt.visitCharge ?? 0);
                   return (
                     <TableRow key={rt.id} data-testid={`row-charge-rate-${rt.id}`}>
                       <TableCell className="font-bold">{rt.name}</TableCell>
@@ -133,6 +137,11 @@ export default function ChargeRatesPage() {
                       <TableCell className="text-right">
                         {(rt.rmoCharge ?? 0) > 0
                           ? <span className="font-medium">₹{rt.rmoCharge.toLocaleString()}</span>
+                          : <Badge variant="outline" className="text-xs font-normal text-muted-foreground">Not set</Badge>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {(rt.visitCharge ?? 0) > 0
+                          ? <span className="font-medium">₹{rt.visitCharge.toLocaleString()}</span>
                           : <Badge variant="outline" className="text-xs font-normal text-muted-foreground">Not set</Badge>}
                       </TableCell>
                       <TableCell className="text-right">

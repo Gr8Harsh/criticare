@@ -16,6 +16,7 @@ export const roomTypes = pgTable("room_types", {
   dailyCharge: integer("daily_charge").notNull(),
   nursingCharge: integer("nursing_charge").notNull().default(0),
   rmoCharge: integer("rmo_charge").notNull().default(0),
+  visitCharge: integer("visit_charge").notNull().default(0),
 });
 
 export const patients = pgTable("patients", {
@@ -158,6 +159,7 @@ export const patientRoomCharges = pgTable("patient_room_charges", {
   roomCharge: integer("room_charge").notNull().default(0),
   nursingCharge: integer("nursing_charge").notNull().default(0),
   rmoCharge: integer("rmo_charge").notNull().default(0),
+  visitCharge: integer("visit_charge").notNull().default(0),
   notes: text("notes"),
 });
 
