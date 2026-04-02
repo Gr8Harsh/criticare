@@ -192,13 +192,11 @@ export async function registerRoutes(
       0,
     );
 
-    let roomCharge = 0;
     let nursingCharges = 0;
     let otherCharges = 0;
 
     chargesList.forEach((c) => {
-      if (c.type === "ROOM") roomCharge += c.amount;
-      else if (c.type === "NURSING") nursingCharges += c.amount;
+      if (c.type === "NURSING") nursingCharges += c.amount;
       else if (c.type === "OTHER") otherCharges += c.amount;
     });
 
@@ -215,15 +213,26 @@ export async function registerRoutes(
       ),
     );
 
+    let roomCharge = 0;
     let roomNursingCharges = 0;
     let rmoCharges = 0;
 
-    if (roomCharge === 0) {
+    // Fetch explicit per-day room charges
+    const roomChargesList = await storage.getPatientRoomCharges(patientId);
+
+    if (roomChargesList.length > 0) {
+      // Use explicit per-day entries
+      roomChargesList.forEach((rc) => {
+        roomCharge += rc.roomCharge;
+        roomNursingCharges += rc.nursingCharge;
+        rmoCharges += rc.rmoCharge;
+      });
+    } else {
+      // Auto-calculate from room type and room switches
       const allRoomTypes = await storage.getRoomTypes();
       const switches = await storage.getRoomSwitchesByPatient(patientId);
       switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
 
-      // Helper to accumulate all room-based charges for a segment
       const addSegmentCharges = (roomTypeId: number, days: number) => {
         if (days <= 0) return;
         const rt = allRoomTypes.find((r) => r.id === roomTypeId);
@@ -233,7 +242,6 @@ export async function registerRoutes(
         rmoCharges += days * (rt.rmoCharge ?? 0);
       };
 
-      // Normalize a date to midnight (calendar day boundary) for clean day arithmetic
       const toMidnight = (d: Date) => {
         const m = new Date(d);
         m.setHours(0, 0, 0, 0);
@@ -245,7 +253,6 @@ export async function registerRoutes(
       if (switches.length === 0) {
         addSegmentCharges(patient.roomTypeId, daysAdmitted);
       } else {
-        // Work in calendar days (midnight boundaries) to avoid time-of-day drift
         let prevDay = toMidnight(admissionDate);
         const dischargeDay = toMidnight(dischargeDate);
         let prevRoomTypeId = switches[0].fromRoomTypeId;
@@ -254,17 +261,13 @@ export async function registerRoutes(
         for (const sw of switches) {
           const switchDay = toMidnight(new Date(sw.switchDate));
           const diffDays = Math.max(0, calendarDayDiff(prevDay, switchDay));
-
           if (sw.isHalfDay) {
-            // Charge diffDays in old room + half the switch day, half in new room
             addSegmentCharges(prevRoomTypeId, diffDays + 0.5);
             addSegmentCharges(sw.toRoomTypeId, 0.5);
-            // Next segment starts from the day after the switch day
             const nextDay = new Date(switchDay);
             nextDay.setDate(nextDay.getDate() + 1);
             prevDay = nextDay;
           } else {
-            // Charge diffDays in old room; switch day belongs to new room
             addSegmentCharges(prevRoomTypeId, diffDays);
             prevDay = switchDay;
           }
@@ -272,14 +275,9 @@ export async function registerRoutes(
           lastRoomTypeId = sw.toRoomTypeId;
         }
 
-        // Final segment: remaining days from last boundary to discharge day
-        const finalDays = Math.max(0, calendarDayDiff(prevDay, dischargeDay));
+        const finalDays = Math.max(0, calendarDayDiff(prevDay, toMidnight(dischargeDate)));
         addSegmentCharges(prevRoomTypeId, finalDays);
-
-        // Ensure minimum 1 day billing (e.g. all switches on same calendar day)
-        if (roomCharge === 0) {
-          addSegmentCharges(lastRoomTypeId, 1);
-        }
+        if (roomCharge === 0) addSegmentCharges(lastRoomTypeId, 1);
       }
 
       roomCharge = Math.round(roomCharge);
@@ -325,6 +323,7 @@ export async function registerRoutes(
       charges: chargesList,
       procedures: proceduresList,
       surgeries: surgeriesList,
+      roomChargesList,
       roomSwitches: roomSwitchesList,
       patient,
     });
@@ -359,6 +358,62 @@ export async function registerRoutes(
       await storage.updatePatient(patientId, { roomTypeId: Number(toRoomTypeId) });
 
       res.status(201).json(sw);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  // Patient Room Charges CRUD
+  app.get('/api/patients/:id/room-charges', async (req, res) => {
+    const patientId = Number(req.params.id);
+    const list = await storage.getPatientRoomCharges(patientId);
+    res.json(list);
+  });
+
+  app.post('/api/patients/:id/room-charges', async (req, res) => {
+    try {
+      const patientId = Number(req.params.id);
+      const patient = await storage.getPatient(patientId);
+      if (!patient) return res.status(404).json({ message: "Patient not found" });
+      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, notes } = req.body;
+      const row = await storage.createPatientRoomCharge({
+        patientId,
+        date: new Date(date),
+        roomTypeId: roomTypeId ? Number(roomTypeId) : null,
+        roomCharge: Number(roomCharge ?? 0),
+        nursingCharge: Number(nursingCharge ?? 0),
+        rmoCharge: Number(rmoCharge ?? 0),
+        notes: notes || null,
+      });
+      res.status(201).json(row);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.put('/api/patients/:id/room-charges/:chargeId', async (req, res) => {
+    try {
+      const id = Number(req.params.chargeId);
+      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, notes } = req.body;
+      const row = await storage.updatePatientRoomCharge(id, {
+        date: date ? new Date(date) : undefined,
+        roomTypeId: roomTypeId ? Number(roomTypeId) : null,
+        roomCharge: roomCharge !== undefined ? Number(roomCharge) : undefined,
+        nursingCharge: nursingCharge !== undefined ? Number(nursingCharge) : undefined,
+        rmoCharge: rmoCharge !== undefined ? Number(rmoCharge) : undefined,
+        notes: notes !== undefined ? (notes || null) : undefined,
+      });
+      res.json(row);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete('/api/patients/:id/room-charges/:chargeId', async (req, res) => {
+    try {
+      const id = Number(req.params.chargeId);
+      await storage.deletePatientRoomCharge(id);
+      res.json({ message: "Deleted" });
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
     }

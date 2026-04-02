@@ -150,6 +150,17 @@ export const roomSwitches = pgTable("room_switches", {
   notes: text("notes"),
 });
 
+export const patientRoomCharges = pgTable("patient_room_charges", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").notNull(),
+  date: timestamp("date").notNull(),
+  roomTypeId: integer("room_type_id"),
+  roomCharge: integer("room_charge").notNull().default(0),
+  nursingCharge: integer("nursing_charge").notNull().default(0),
+  rmoCharge: integer("rmo_charge").notNull().default(0),
+  notes: text("notes"),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertRoomTypeSchema = createInsertSchema(roomTypes).omit({ id: true });
 export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true, ipdNumber: true });
@@ -167,6 +178,7 @@ export const insertDoctorRoomChargeSchema = createInsertSchema(doctorRoomCharges
 export const insertDoctorSurgeryChargeSchema = createInsertSchema(doctorSurgeryCharges).omit({ id: true });
 export const insertSurgeryNameSchema = createInsertSchema(surgeryNames).omit({ id: true });
 export const insertRoomSwitchSchema = createInsertSchema(roomSwitches).omit({ id: true });
+export const insertPatientRoomChargeSchema = createInsertSchema(patientRoomCharges).omit({ id: true });
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -186,6 +198,8 @@ export type DoctorRoomCharge = typeof doctorRoomCharges.$inferSelect;
 export type SurgeryName = typeof surgeryNames.$inferSelect;
 export type RoomSwitch = typeof roomSwitches.$inferSelect;
 export type InsertRoomSwitch = z.infer<typeof insertRoomSwitchSchema>;
+export type PatientRoomCharge = typeof patientRoomCharges.$inferSelect;
+export type InsertPatientRoomCharge = z.infer<typeof insertPatientRoomChargeSchema>;
 export type InsertSurgeryName = z.infer<typeof insertSurgeryNameSchema>;
 export type DoctorSurgeryCharge = typeof doctorSurgeryCharges.$inferSelect;
 export type InsertDoctorSurgeryCharge = z.infer<typeof insertDoctorSurgeryChargeSchema>;

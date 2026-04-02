@@ -1,14 +1,15 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames, roomSwitches,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames, roomSwitches, patientRoomCharges,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
   type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge,
   type DoctorSurgeryCharge,
   type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery,
-  type SurgeryName, type RoomSwitch, type InsertRoomSwitch
+  type SurgeryName, type RoomSwitch, type InsertRoomSwitch,
+  type PatientRoomCharge, type InsertPatientRoomCharge
 } from "@shared/schema";
 import session from "express-session";
 import MemoryStore from "memorystore";
@@ -296,6 +297,23 @@ export class DatabaseStorage {
   }
   async getRoomSwitchesByPatient(patientId: number): Promise<RoomSwitch[]> {
     return await db.select().from(roomSwitches).where(eq(roomSwitches.patientId, patientId));
+  }
+
+  // Patient Room Charges (explicit per-day entries)
+  async getPatientRoomCharges(patientId: number): Promise<PatientRoomCharge[]> {
+    const rows = await db.select().from(patientRoomCharges).where(eq(patientRoomCharges.patientId, patientId));
+    return rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }
+  async createPatientRoomCharge(data: InsertPatientRoomCharge): Promise<PatientRoomCharge> {
+    const [row] = await db.insert(patientRoomCharges).values(data).returning();
+    return row;
+  }
+  async updatePatientRoomCharge(id: number, data: Partial<InsertPatientRoomCharge>): Promise<PatientRoomCharge> {
+    const [row] = await db.update(patientRoomCharges).set(data).where(eq(patientRoomCharges.id, id)).returning();
+    return row;
+  }
+  async deletePatientRoomCharge(id: number): Promise<void> {
+    await db.delete(patientRoomCharges).where(eq(patientRoomCharges.id, id));
   }
 }
 

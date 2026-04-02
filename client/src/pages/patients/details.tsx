@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft, BedDouble } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -154,6 +154,7 @@ export default function PatientDetails() {
           <TabsTrigger value="medicines" className="rounded-lg px-5"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
           <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
           <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgery</TabsTrigger>
+          <TabsTrigger value="room-charges" className="rounded-lg px-5"><BedDouble className="w-4 h-4 mr-2" /> Room Charges</TabsTrigger>
           <TabsTrigger value="room-switch" className="rounded-lg px-5"><ArrowRightLeft className="w-4 h-4 mr-2" /> Room Switch</TabsTrigger>
           <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
           <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
@@ -164,6 +165,7 @@ export default function PatientDetails() {
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+          <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
           <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
@@ -1127,6 +1129,224 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
           </div>
         )}
       </CardContent>
+    </Card>
+  );
+}
+
+function RoomChargesTab({ patient, roomChargesList, canManage }: { patient: any, roomChargesList: any[], canManage: boolean }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: roomTypes } = useRoomTypes();
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+
+  const form = useForm({
+    defaultValues: { date: format(new Date(), "yyyy-MM-dd"), roomTypeId: "", roomCharge: 0, nursingCharge: 0, rmoCharge: 0, notes: "" },
+  });
+
+  const selectedRoomTypeId = form.watch("roomTypeId");
+
+  useEffect(() => {
+    if (selectedRoomTypeId && roomTypes) {
+      const rt = roomTypes.find((r: any) => String(r.id) === String(selectedRoomTypeId));
+      if (rt) {
+        form.setValue("roomCharge", rt.dailyCharge ?? 0);
+        form.setValue("nursingCharge", rt.nursingCharge ?? 0);
+        form.setValue("rmoCharge", rt.rmoCharge ?? 0);
+      }
+    }
+  }, [selectedRoomTypeId, roomTypes]);
+
+  const openAdd = () => {
+    setEditing(null);
+    form.reset({ date: format(new Date(), "yyyy-MM-dd"), roomTypeId: String(patient.roomTypeId ?? ""), roomCharge: 0, nursingCharge: 0, rmoCharge: 0, notes: "" });
+    setOpen(true);
+  };
+
+  const openEdit = (rc: any) => {
+    setEditing(rc);
+    form.reset({
+      date: format(new Date(rc.date), "yyyy-MM-dd"),
+      roomTypeId: rc.roomTypeId ? String(rc.roomTypeId) : "",
+      roomCharge: rc.roomCharge,
+      nursingCharge: rc.nursingCharge,
+      rmoCharge: rc.rmoCharge,
+      notes: rc.notes ?? "",
+    });
+    setOpen(true);
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async (values: any) => {
+      const url = editing
+        ? `/api/patients/${patient.id}/room-charges/${editing.id}`
+        : `/api/patients/${patient.id}/room-charges`;
+      const method = editing ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          date: values.date,
+          roomTypeId: values.roomTypeId ? Number(values.roomTypeId) : null,
+          roomCharge: Number(values.roomCharge),
+          nursingCharge: Number(values.nursingCharge),
+          rmoCharge: Number(values.rmoCharge),
+          notes: values.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/patients', patient.id, 'bill'] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      toast({ title: editing ? "Updated" : "Added", description: "Room charge saved." });
+      setOpen(false);
+    },
+    onError: () => toast({ title: "Error", description: "Failed to save room charge.", variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/patients/${patient.id}/room-charges/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed to delete");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/patients', patient.id, 'bill'] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      toast({ title: "Deleted", description: "Room charge removed." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to delete.", variant: "destructive" }),
+  });
+
+  const totalRoom = roomChargesList.reduce((s: number, r: any) => s + (r.roomCharge ?? 0), 0);
+  const totalNursing = roomChargesList.reduce((s: number, r: any) => s + (r.nursingCharge ?? 0), 0);
+  const totalRmo = roomChargesList.reduce((s: number, r: any) => s + (r.rmoCharge ?? 0), 0);
+
+  return (
+    <Card className="border-border/50 shadow-md">
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <CardTitle className="font-display text-lg flex items-center gap-2">
+          <BedDouble className="w-5 h-5 text-primary" /> Room Charges
+        </CardTitle>
+        {canManage && !patient.discharged && (
+          <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90" onClick={openAdd} data-testid="button-add-room-charge">
+            <Plus className="w-4 h-4 mr-2" /> Add Charge
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="p-0">
+        {roomChargesList.length === 0 ? (
+          <div className="text-center py-10 text-muted-foreground">
+            <BedDouble className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p>No room charges added yet.</p>
+            <p className="text-xs mt-1">Room charges are auto-calculated from room type until you add explicit entries here.</p>
+          </div>
+        ) : (
+          <>
+            <Table>
+              <TableHeader className="bg-secondary/40">
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Room Type</TableHead>
+                  <TableHead className="text-right">Room (₹)</TableHead>
+                  <TableHead className="text-right">Nursing (₹)</TableHead>
+                  <TableHead className="text-right">RMO (₹)</TableHead>
+                  <TableHead className="text-right">Total (₹)</TableHead>
+                  {canManage && !patient.discharged && <TableHead className="w-[80px]" />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {roomChargesList.map((rc: any) => {
+                  const rt = roomTypes?.find((r: any) => r.id === rc.roomTypeId);
+                  const rowTotal = (rc.roomCharge ?? 0) + (rc.nursingCharge ?? 0) + (rc.rmoCharge ?? 0);
+                  return (
+                    <TableRow key={rc.id} data-testid={`row-room-charge-${rc.id}`}>
+                      <TableCell className="font-medium">{format(new Date(rc.date), "dd MMM yyyy")}</TableCell>
+                      <TableCell className="text-muted-foreground">{rt?.name ?? "—"}</TableCell>
+                      <TableCell className="text-right">₹{(rc.roomCharge ?? 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{(rc.nursingCharge ?? 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right">₹{(rc.rmoCharge ?? 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-semibold text-primary">₹{rowTotal.toLocaleString()}</TableCell>
+                      {canManage && !patient.discharged && (
+                        <TableCell>
+                          <div className="flex items-center gap-1 justify-end">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(rc)} data-testid={`button-edit-room-charge-${rc.id}`}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => deleteMutation.mutate(rc.id)} data-testid={`button-delete-room-charge-${rc.id}`}>
+                              <X className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            <div className="flex justify-end gap-6 px-4 py-3 bg-secondary/20 border-t border-border/50 text-sm font-semibold">
+              <span>Room: ₹{totalRoom.toLocaleString()}</span>
+              <span>Nursing: ₹{totalNursing.toLocaleString()}</span>
+              <span>RMO: ₹{totalRmo.toLocaleString()}</span>
+              <span className="text-primary text-base">Total: ₹{(totalRoom + totalNursing + totalRmo).toLocaleString()}</span>
+            </div>
+          </>
+        )}
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) setOpen(false); }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Room Charge" : "Add Room Charge"}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4 pt-1">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Date <span className="text-destructive">*</span></label>
+              <Input type="date" data-testid="input-room-charge-date" {...form.register("date", { required: true })} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Room Type</label>
+              <Select value={form.watch("roomTypeId")} onValueChange={(v) => form.setValue("roomTypeId", v)}>
+                <SelectTrigger data-testid="select-room-charge-type">
+                  <SelectValue placeholder="Select room type (auto-fills charges)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roomTypes?.map((rt: any) => (
+                    <SelectItem key={rt.id} value={String(rt.id)}>{rt.name} — ₹{rt.dailyCharge}/day</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Room (₹)</label>
+                <Input type="number" min={0} data-testid="input-room-charge-room" {...form.register("roomCharge")} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Nursing (₹)</label>
+                <Input type="number" min={0} data-testid="input-room-charge-nursing" {...form.register("nursingCharge")} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">RMO (₹)</label>
+                <Input type="number" min={0} data-testid="input-room-charge-rmo" {...form.register("rmoCharge")} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Notes</label>
+              <Input placeholder="Optional note" data-testid="input-room-charge-notes" {...form.register("notes")} />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button type="submit" disabled={saveMutation.isPending} className="flex-1" data-testid="button-save-room-charge">
+                {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {editing ? "Update" : "Add Charge"}
+              </Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
