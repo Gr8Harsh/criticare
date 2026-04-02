@@ -1227,6 +1227,20 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
     setOpen(true);
   };
 
+  // Opens dialog pre-filled from an auto-calculated row but saves as a NEW explicit entry
+  const openAutoEdit = (rc: any) => {
+    setEditing(null);
+    form.reset({
+      date: rc.date,
+      roomTypeId: rc.roomTypeId ? String(rc.roomTypeId) : String(patient.roomTypeId ?? ""),
+      roomCharge: rc.roomCharge,
+      nursingCharge: rc.nursingCharge,
+      rmoCharge: rc.rmoCharge,
+      notes: "",
+    });
+    setOpen(true);
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (values: any) => {
       const url = editing
@@ -1319,7 +1333,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                   <TableHead className="text-right">Nursing (₹)</TableHead>
                   <TableHead className="text-right">RMO (₹)</TableHead>
                   <TableHead className="text-right">Total (₹)</TableHead>
-                  {hasExplicit && canManage && !patient.discharged && <TableHead className="w-[80px]" />}
+                  {canManage && !patient.discharged && <TableHead className="w-[80px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1328,6 +1342,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                     ? (roomTypes?.find((r: any) => r.id === rc.roomTypeId)?.name ?? "—")
                     : rc.roomTypeName;
                   const rowTotal = (rc.roomCharge ?? 0) + (rc.nursingCharge ?? 0) + (rc.rmoCharge ?? 0);
+                  const isAutoRow = !hasExplicit;
                   return (
                     <TableRow key={hasExplicit ? rc.id : idx} data-testid={hasExplicit ? `row-room-charge-${rc.id}` : `row-room-charge-auto-${idx}`}>
                       <TableCell className="font-medium">{format(new Date(rc.date), "dd MMM yyyy")}</TableCell>
@@ -1336,15 +1351,21 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                       <TableCell className="text-right">₹{(rc.nursingCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.rmoCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right font-semibold text-primary">₹{rowTotal.toLocaleString()}</TableCell>
-                      {hasExplicit && canManage && !patient.discharged && (
+                      {canManage && !patient.discharged && (
                         <TableCell>
                           <div className="flex items-center gap-1 justify-end">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(rc)} data-testid={`button-edit-room-charge-${rc.id}`}>
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7"
+                              onClick={() => isAutoRow ? openAutoEdit(rc) : openEdit(rc)}
+                              data-testid={`button-edit-room-charge-${isAutoRow ? `auto-${idx}` : rc.id}`}
+                            >
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => deleteMutation.mutate(rc.id)} data-testid={`button-delete-room-charge-${rc.id}`}>
-                              <X className="w-3.5 h-3.5" />
-                            </Button>
+                            {!isAutoRow && (
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => deleteMutation.mutate(rc.id)} data-testid={`button-delete-room-charge-${rc.id}`}>
+                                <X className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       )}
