@@ -100,8 +100,6 @@ export const api = {
         200: z.object({
           daysAdmitted: z.number(),
           roomCharge: z.number(),
-          roomNursingCharges: z.number(),
-          rmoCharges: z.number(),
           doctorCharges: z.number(),
           medicineCharges: z.number(),
           nursingCharges: z.number(),
@@ -114,7 +112,6 @@ export const api = {
           charges: z.array(z.any()),
           procedures: z.array(z.any()),
           surgeries: z.array(z.any()),
-          roomSwitches: z.array(z.any()),
           patient: z.custom<typeof patients.$inferSelect>(),
         }),
         404: errorSchemas.notFound,
