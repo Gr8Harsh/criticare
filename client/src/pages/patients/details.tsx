@@ -165,7 +165,7 @@ export default function PatientDetails() {
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
+          <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
           <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
@@ -1133,7 +1133,58 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
   );
 }
 
-function RoomChargesTab({ patient, roomChargesList, canManage }: { patient: any, roomChargesList: any[], canManage: boolean }) {
+function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: any[]) {
+  if (!roomTypes) return [];
+  const toMidnight = (d: Date) => { const m = new Date(d); m.setHours(0, 0, 0, 0); return m; };
+  const admissionDay = toMidnight(new Date(patient.admissionDate));
+  const endDay = patient.discharged && patient.expectedDischargeDate
+    ? toMidnight(new Date(patient.expectedDischargeDate))
+    : toMidnight(new Date());
+
+  const sorted = [...roomSwitches].sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
+  const initialRoomTypeId = sorted.length > 0 ? sorted[0].fromRoomTypeId : patient.roomTypeId;
+  const result: any[] = [];
+  let current = new Date(admissionDay);
+
+  while (current <= endDay) {
+    const dayTime = current.getTime();
+    const switchOnDay = sorted.find(sw => toMidnight(new Date(sw.switchDate)).getTime() === dayTime);
+
+    if (switchOnDay && switchOnDay.isHalfDay) {
+      const oldRt = roomTypes.find((r: any) => r.id === switchOnDay.fromRoomTypeId);
+      const newRt = roomTypes.find((r: any) => r.id === switchOnDay.toRoomTypeId);
+      result.push({
+        date: format(current, "yyyy-MM-dd"),
+        roomTypeName: `${oldRt?.name ?? "?"} → ${newRt?.name ?? "?"} (half-day switch)`,
+        roomCharge: Math.round(((oldRt?.dailyCharge ?? 0) + (newRt?.dailyCharge ?? 0)) / 2),
+        nursingCharge: Math.round(((oldRt?.nursingCharge ?? 0) + (newRt?.nursingCharge ?? 0)) / 2),
+        rmoCharge: Math.round(((oldRt?.rmoCharge ?? 0) + (newRt?.rmoCharge ?? 0)) / 2),
+        isComputed: true,
+      });
+    } else {
+      let roomTypeId = initialRoomTypeId;
+      for (const sw of sorted) {
+        if (toMidnight(new Date(sw.switchDate)) <= current) roomTypeId = sw.toRoomTypeId;
+      }
+      const rt = roomTypes.find((r: any) => r.id === roomTypeId);
+      result.push({
+        date: format(current, "yyyy-MM-dd"),
+        roomTypeName: rt?.name ?? "Unknown",
+        roomCharge: rt?.dailyCharge ?? 0,
+        nursingCharge: rt?.nursingCharge ?? 0,
+        rmoCharge: rt?.rmoCharge ?? 0,
+        isComputed: true,
+      });
+    }
+
+    const next = new Date(current);
+    next.setDate(next.getDate() + 1);
+    current = next;
+  }
+  return result;
+}
+
+function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: { patient: any, roomChargesList: any[], roomSwitches: any[], canManage: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: roomTypes } = useRoomTypes();
@@ -1220,15 +1271,23 @@ function RoomChargesTab({ patient, roomChargesList, canManage }: { patient: any,
     onError: () => toast({ title: "Error", description: "Failed to delete.", variant: "destructive" }),
   });
 
-  const totalRoom = roomChargesList.reduce((s: number, r: any) => s + (r.roomCharge ?? 0), 0);
-  const totalNursing = roomChargesList.reduce((s: number, r: any) => s + (r.nursingCharge ?? 0), 0);
-  const totalRmo = roomChargesList.reduce((s: number, r: any) => s + (r.rmoCharge ?? 0), 0);
+  const hasExplicit = roomChargesList.length > 0;
+  const displayRows: any[] = hasExplicit
+    ? roomChargesList
+    : computeDailyRoomCharges(patient, roomSwitches, roomTypes ?? []);
+
+  const totalRoom = displayRows.reduce((s: number, r: any) => s + (r.roomCharge ?? 0), 0);
+  const totalNursing = displayRows.reduce((s: number, r: any) => s + (r.nursingCharge ?? 0), 0);
+  const totalRmo = displayRows.reduce((s: number, r: any) => s + (r.rmoCharge ?? 0), 0);
 
   return (
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
         <CardTitle className="font-display text-lg flex items-center gap-2">
           <BedDouble className="w-5 h-5 text-primary" /> Room Charges
+          {!hasExplicit && (
+            <Badge variant="outline" className="text-xs font-normal text-muted-foreground ml-1">Auto-calculated</Badge>
+          )}
         </CardTitle>
         {canManage && !patient.discharged && (
           <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90" onClick={openAdd} data-testid="button-add-room-charge">
@@ -1236,12 +1295,18 @@ function RoomChargesTab({ patient, roomChargesList, canManage }: { patient: any,
           </Button>
         )}
       </CardHeader>
+      {!hasExplicit && (
+        <div className="px-4 pb-3">
+          <p className="text-xs text-muted-foreground bg-secondary/50 rounded-lg px-3 py-2">
+            These charges are auto-calculated from the patient's room type. Use <strong>Add Charge</strong> to enter day-specific amounts which will override this auto-calculation.
+          </p>
+        </div>
+      )}
       <CardContent className="p-0">
-        {roomChargesList.length === 0 ? (
+        {displayRows.length === 0 ? (
           <div className="text-center py-10 text-muted-foreground">
             <BedDouble className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <p>No room charges added yet.</p>
-            <p className="text-xs mt-1">Room charges are auto-calculated from room type until you add explicit entries here.</p>
+            <p>No room charges to display yet.</p>
           </div>
         ) : (
           <>
@@ -1254,22 +1319,24 @@ function RoomChargesTab({ patient, roomChargesList, canManage }: { patient: any,
                   <TableHead className="text-right">Nursing (₹)</TableHead>
                   <TableHead className="text-right">RMO (₹)</TableHead>
                   <TableHead className="text-right">Total (₹)</TableHead>
-                  {canManage && !patient.discharged && <TableHead className="w-[80px]" />}
+                  {hasExplicit && canManage && !patient.discharged && <TableHead className="w-[80px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {roomChargesList.map((rc: any) => {
-                  const rt = roomTypes?.find((r: any) => r.id === rc.roomTypeId);
+                {displayRows.map((rc: any, idx: number) => {
+                  const rtName = hasExplicit
+                    ? (roomTypes?.find((r: any) => r.id === rc.roomTypeId)?.name ?? "—")
+                    : rc.roomTypeName;
                   const rowTotal = (rc.roomCharge ?? 0) + (rc.nursingCharge ?? 0) + (rc.rmoCharge ?? 0);
                   return (
-                    <TableRow key={rc.id} data-testid={`row-room-charge-${rc.id}`}>
+                    <TableRow key={hasExplicit ? rc.id : idx} data-testid={hasExplicit ? `row-room-charge-${rc.id}` : `row-room-charge-auto-${idx}`}>
                       <TableCell className="font-medium">{format(new Date(rc.date), "dd MMM yyyy")}</TableCell>
-                      <TableCell className="text-muted-foreground">{rt?.name ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{rtName}</TableCell>
                       <TableCell className="text-right">₹{(rc.roomCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.nursingCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.rmoCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right font-semibold text-primary">₹{rowTotal.toLocaleString()}</TableCell>
-                      {canManage && !patient.discharged && (
+                      {hasExplicit && canManage && !patient.discharged && (
                         <TableCell>
                           <div className="flex items-center gap-1 justify-end">
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(rc)} data-testid={`button-edit-room-charge-${rc.id}`}>
