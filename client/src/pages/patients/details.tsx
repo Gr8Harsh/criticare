@@ -1236,39 +1236,49 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
       const oldRt = roomTypes.find((r: any) => r.id === switchOnDay.fromRoomTypeId);
       const newRt = roomTypes.find((r: any) => r.id === switchOnDay.toRoomTypeId);
       const dist = switchOnDay.visitDistribution ?? "old_new";
-      let visitCharge = 0;
       let visitEntries: { roomTypeName: string; charge: number }[];
       if (dist === "old_twice") {
-        visitCharge = 2 * (oldRt?.visitCharge ?? 0);
         visitEntries = [
           { roomTypeName: oldRt?.name ?? "?", charge: oldRt?.visitCharge ?? 0 },
           { roomTypeName: oldRt?.name ?? "?", charge: oldRt?.visitCharge ?? 0 },
         ];
       } else if (dist === "new_twice") {
-        visitCharge = 2 * (newRt?.visitCharge ?? 0);
         visitEntries = [
           { roomTypeName: newRt?.name ?? "?", charge: newRt?.visitCharge ?? 0 },
           { roomTypeName: newRt?.name ?? "?", charge: newRt?.visitCharge ?? 0 },
         ];
       } else {
-        visitCharge = (oldRt?.visitCharge ?? 0) + (newRt?.visitCharge ?? 0);
         visitEntries = [
           { roomTypeName: oldRt?.name ?? "?", charge: oldRt?.visitCharge ?? 0 },
           { roomTypeName: newRt?.name ?? "?", charge: newRt?.visitCharge ?? 0 },
         ];
       }
+      // Push two separate rows — one per room for half-day split
       result.push({
         date: format(current, "yyyy-MM-dd"),
-        roomTypeName: `${oldRt?.name ?? "?"} → ${newRt?.name ?? "?"} (half-day switch)`,
-        roomCharge: Math.round(((oldRt?.dailyCharge ?? 0) + (newRt?.dailyCharge ?? 0)) / 2),
-        nursingCharge: Math.round(((oldRt?.nursingCharge ?? 0) + (newRt?.nursingCharge ?? 0)) / 2),
-        rmoCharge: Math.round(((oldRt?.rmoCharge ?? 0) + (newRt?.rmoCharge ?? 0)) / 2),
-        visitCharge,
-        visitEntries,
+        roomTypeName: oldRt?.name ?? "?",
+        roomCharge: Math.round((oldRt?.dailyCharge ?? 0) / 2),
+        nursingCharge: Math.round((oldRt?.nursingCharge ?? 0) / 2),
+        rmoCharge: Math.round((oldRt?.rmoCharge ?? 0) / 2),
+        visitCharge: visitEntries[0].charge,
+        visitEntries: [visitEntries[0]],
+        isHalfDay: true,
+        isComputed: true,
+      });
+      result.push({
+        date: format(current, "yyyy-MM-dd"),
+        roomTypeName: newRt?.name ?? "?",
+        roomCharge: Math.round((newRt?.dailyCharge ?? 0) / 2),
+        nursingCharge: Math.round((newRt?.nursingCharge ?? 0) / 2),
+        rmoCharge: Math.round((newRt?.rmoCharge ?? 0) / 2),
+        visitCharge: visitEntries[1].charge,
+        visitEntries: [visitEntries[1]],
+        isHalfDay: true,
         isComputed: true,
       });
     } else {
       let roomTypeId = initialRoomTypeId;
+      const isSwitchDay = sorted.some(sw => toMidnight(new Date(sw.switchDate)).getTime() === dayTime && !sw.isHalfDay);
       for (const sw of sorted) {
         if (toMidnight(new Date(sw.switchDate)) <= current) roomTypeId = sw.toRoomTypeId;
       }
@@ -1284,6 +1294,8 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
           { roomTypeName: rt?.name ?? "Unknown", charge: rt?.visitCharge ?? 0 },
           { roomTypeName: rt?.name ?? "Unknown", charge: rt?.visitCharge ?? 0 },
         ],
+        isHalfDay: false,
+        isFullDaySwitch: isSwitchDay,
         isComputed: true,
       });
     }
@@ -1463,7 +1475,17 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                   return (
                     <TableRow key={hasExplicit ? rc.id : idx} data-testid={hasExplicit ? `row-room-charge-${rc.id}` : `row-room-charge-auto-${idx}`}>
                       <TableCell className="font-medium">{format(new Date(rc.date), "dd MMM yyyy")}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{rtName}</TableCell>
+                      <TableCell className="text-sm">
+                        <span className="flex items-center gap-2">
+                          <span className="text-muted-foreground">{rtName}</span>
+                          {!hasExplicit && rc.isHalfDay && (
+                            <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-medium shrink-0">½ Day</span>
+                          )}
+                          {!hasExplicit && rc.isFullDaySwitch && (
+                            <span className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-1.5 py-0.5 rounded-full font-medium shrink-0">Full Day Switch</span>
+                          )}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-right">₹{(rc.roomCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.nursingCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.rmoCharge ?? 0).toLocaleString()}</TableCell>
