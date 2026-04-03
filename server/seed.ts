@@ -3,6 +3,7 @@ import { promisify } from "util";
 import { storage } from "./storage";
 import { db } from "./db";
 import { roomTypes, doctors } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const scryptAsync = promisify(scrypt);
 
@@ -13,8 +14,8 @@ async function hashPassword(password: string) {
 }
 
 export async function seedProductionData() {
-  // Seed room types
-  const existingRooms = await db.select().from(roomTypes);
+  // Seed room types if none exist
+  let existingRooms = await db.select().from(roomTypes);
   if (existingRooms.length === 0) {
     const roomData = [
       { name: "General Ward", dailyCharge: 500 },
@@ -27,6 +28,24 @@ export async function seedProductionData() {
       await storage.createRoomType(room);
     }
     console.log("Seeded room types");
+    existingRooms = await db.select().from(roomTypes);
+  }
+
+  // Migrate: apply charge formula (nursing=1/5, rmo=1/5, visit=2/5 of daily charge)
+  // to any room type that still has all charges at 0
+  const roomsNeedingCharges = existingRooms.filter(
+    (r) => (r.nursingCharge ?? 0) === 0 && (r.rmoCharge ?? 0) === 0 && (r.visitCharge ?? 0) === 0
+  );
+  for (const room of roomsNeedingCharges) {
+    const nursing = Math.round(room.dailyCharge / 5);
+    const rmo = Math.round(room.dailyCharge / 5);
+    const visit = Math.round((room.dailyCharge * 2) / 5);
+    await db.update(roomTypes)
+      .set({ nursingCharge: nursing, rmoCharge: rmo, visitCharge: visit })
+      .where(eq(roomTypes.id, room.id));
+  }
+  if (roomsNeedingCharges.length > 0) {
+    console.log(`Applied charge formula to ${roomsNeedingCharges.length} room type(s)`);
   }
 
   // Seed doctor users and profiles
