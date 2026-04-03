@@ -244,7 +244,7 @@ export async function registerRoutes(
         roomCharge += days * rt.dailyCharge;
         roomNursingCharges += days * (rt.nursingCharge ?? 0);
         rmoCharges += days * (rt.rmoCharge ?? 0);
-        if (includeVisit) visitCharges += days * (rt.visitCharge ?? 0);
+        if (includeVisit) visitCharges += days * 2 * (rt.visitCharge ?? 0);
       };
 
       const toMidnight = (d: Date) => {
@@ -270,9 +270,9 @@ export async function registerRoutes(
             // Room/nursing/rmo: half-day split (no visit charge yet)
             addSegmentCharges(prevRoomTypeId, diffDays + 0.5, false);
             addSegmentCharges(sw.toRoomTypeId, 0.5, false);
-            // Visit charge for regular days before switch day
+            // Visit charge for regular days before switch day (2 visits per day)
             const oldRt = allRoomTypes.find((r) => r.id === prevRoomTypeId);
-            visitCharges += diffDays * (oldRt?.visitCharge ?? 0);
+            visitCharges += diffDays * 2 * (oldRt?.visitCharge ?? 0);
             // Visit charge for the switch day itself — determined by visitDistribution
             const newRt = allRoomTypes.find((r) => r.id === sw.toRoomTypeId);
             const dist = sw.visitDistribution ?? "old_new";

@@ -1234,7 +1234,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         roomCharge: rt?.dailyCharge ?? 0,
         nursingCharge: rt?.nursingCharge ?? 0,
         rmoCharge: rt?.rmoCharge ?? 0,
-        visitCharge: rt?.visitCharge ?? 0,
+        visitCharge: (rt?.visitCharge ?? 0) * 2,
         isComputed: true,
       });
     }
