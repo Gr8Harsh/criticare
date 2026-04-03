@@ -102,6 +102,7 @@ export const api = {
           roomCharge: z.number(),
           roomNursingCharges: z.number().optional(),
           rmoCharges: z.number().optional(),
+          visitCharges: z.number().optional(),
           doctorCharges: z.number(),
           medicineCharges: z.number(),
           nursingCharges: z.number(),

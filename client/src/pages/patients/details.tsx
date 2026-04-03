@@ -1417,7 +1417,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Room (₹)</label>
                 <Input type="number" min={0} data-testid="input-room-charge-room" {...form.register("roomCharge")} />
@@ -1429,6 +1429,10 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">RMO (₹)</label>
                 <Input type="number" min={0} data-testid="input-room-charge-rmo" {...form.register("rmoCharge")} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Visit (₹)</label>
+                <Input type="number" min={0} data-testid="input-room-charge-visit" {...form.register("visitCharge")} />
               </div>
             </div>
             <div className="space-y-1.5">
