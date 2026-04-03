@@ -197,6 +197,108 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
   const { data: assignedDoctors } = useAssignedDoctors(patient.id);
   const createVisit = useCreateVisit();
   const assignDoctor = useAssignDoctor();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [editingDailyVisit, setEditingDailyVisit] = useState<{ row: any; entryId: number; entryVisitCharge: number; entryData: any } | null>(null);
+  const [isDailyEditOpen, setIsDailyEditOpen] = useState(false);
+  const [dailyEditCharge, setDailyEditCharge] = useState("");
+
+  const invalidateBill = () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/patients', patient.id, 'bill'] });
+    queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+  };
+
+  const materializeVisitsMutation = useMutation({
+    mutationFn: async () => {
+      const rows = computeDailyRoomCharges(patient, roomSwitches, roomTypes ?? []);
+      const created: any[] = [];
+      for (const row of rows) {
+        const res = await fetch(`/api/patients/${patient.id}/room-charges`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            date: row.date,
+            roomTypeId: row.roomTypeId,
+            roomCharge: row.roomCharge,
+            nursingCharge: row.nursingCharge,
+            rmoCharge: row.rmoCharge,
+            visitCharge: row.visitCharge,
+            notes: null,
+          }),
+        });
+        created.push(await res.json());
+      }
+      return created;
+    },
+    onSuccess: () => invalidateBill(),
+    onError: () => toast({ title: "Error", description: "Failed to save visit entries.", variant: "destructive" }),
+  });
+
+  const updateVisitChargeMutation = useMutation({
+    mutationFn: async ({ entryId, newVisitCharge, entryData }: { entryId: number; newVisitCharge: number; entryData: any }) => {
+      const res = await fetch(`/api/patients/${patient.id}/room-charges/${entryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          date: format(new Date(entryData.date), 'yyyy-MM-dd'),
+          roomTypeId: entryData.roomTypeId,
+          roomCharge: entryData.roomCharge,
+          nursingCharge: entryData.nursingCharge,
+          rmoCharge: entryData.rmoCharge,
+          visitCharge: newVisitCharge,
+          notes: entryData.notes ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+    },
+    onSuccess: () => {
+      invalidateBill();
+      toast({ title: "Updated", description: "Visit charge updated." });
+      setIsDailyEditOpen(false);
+      setEditingDailyVisit(null);
+    },
+    onError: () => toast({ title: "Error", description: "Failed to update visit charge.", variant: "destructive" }),
+  });
+
+  const getOrMaterializeEntry = async (row: any): Promise<any | null> => {
+    if (roomChargesList.length > 0) {
+      return roomChargesList.find((rc: any) => rc.id === row._chargeEntryId) ?? null;
+    }
+    const created = await materializeVisitsMutation.mutateAsync();
+    return created.find((e: any) =>
+      format(new Date(e.date), 'yyyy-MM-dd') === row.date && e.roomTypeId === row._roomTypeId
+    ) ?? null;
+  };
+
+  const handleDailyVisitDelete = async (row: any) => {
+    if (!canManage) return;
+    const entry = await getOrMaterializeEntry(row);
+    if (!entry) { toast({ title: "Error", description: "Could not find entry to update.", variant: "destructive" }); return; }
+    const newVisitCharge = Math.max(0, (entry.visitCharge ?? 0) - row._slotDefaultCharge);
+    updateVisitChargeMutation.mutate({ entryId: entry.id, newVisitCharge, entryData: entry });
+  };
+
+  const handleDailyVisitEdit = async (row: any) => {
+    if (!canManage) return;
+    const entry = await getOrMaterializeEntry(row);
+    if (!entry) { toast({ title: "Error", description: "Could not find entry to edit.", variant: "destructive" }); return; }
+    setEditingDailyVisit({ row, entryId: entry.id, entryVisitCharge: entry.visitCharge ?? 0, entryData: entry });
+    setDailyEditCharge(String(row._slotDefaultCharge));
+    setIsDailyEditOpen(true);
+  };
+
+  const handleDailyEditSave = () => {
+    if (!editingDailyVisit) return;
+    const newSlotCharge = Math.max(0, parseInt(dailyEditCharge) || 0);
+    const { row, entryId, entryVisitCharge, entryData } = editingDailyVisit;
+    const newVisitCharge = Math.max(0, entryVisitCharge - row._slotDefaultCharge + newSlotCharge);
+    updateVisitChargeMutation.mutate({ entryId, newVisitCharge, entryData });
+  };
+
+  const isBusy = materializeVisitsMutation.isPending || updateVisitChargeMutation.isPending;
 
   const { data: doctorRoomCharges } = useQuery<any[]>({
     queryKey: [`/api/doctors/${selectedDoctorId}/room-charges`],
@@ -286,6 +388,7 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
               <TableHead>Doctor</TableHead>
               <TableHead>Room</TableHead>
               <TableHead className="text-right">Charge (₹)</TableHead>
+              {canManage && <TableHead className="w-16"></TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -296,26 +399,52 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
               // Build 2 visit entries per day from computed or explicit room charges
               const dailyVisitRows: any[] = [];
               if (roomTypes) {
-                const dayEntries = hasExplicit
-                  ? roomChargesList.filter((rc: any) => (rc.visitCharge ?? 0) > 0).map((rc: any) => {
+                let dayEntries: any[] = [];
+
+                if (hasExplicit) {
+                  // Group entries by date to detect switch days (2 entries) vs normal days (1 entry)
+                  const byDate = new Map<string, any[]>();
+                  for (const rc of roomChargesList.filter((rc: any) => (rc.visitCharge ?? 0) > 0)) {
+                    const dk = format(new Date(rc.date), 'yyyy-MM-dd');
+                    if (!byDate.has(dk)) byDate.set(dk, []);
+                    byDate.get(dk)!.push(rc);
+                  }
+                  for (const [dateKey, entries] of Array.from(byDate.entries())) {
+                    const visitEntries: any[] = [];
+                    if (entries.length === 1) {
+                      const rc = entries[0];
                       const rt = roomTypes.find((r: any) => r.id === rc.roomTypeId);
                       const half = Math.round((rc.visitCharge ?? 0) / 2);
-                      return {
-                        date: rc.date,
-                        _date: new Date(rc.date),
-                        visitEntries: [
-                          { roomTypeName: rt?.name ?? "—", charge: half },
-                          { roomTypeName: rt?.name ?? "—", charge: (rc.visitCharge ?? 0) - half },
-                        ],
-                        doctorName: assignedDoctorName,
-                      };
-                    })
-                  : computeDailyRoomCharges(patient, roomSwitches, roomTypes)
-                      .filter((r: any) => (r.visitCharge ?? 0) > 0)
-                      .map((r: any) => ({ ...r, _date: new Date(r.date), doctorName: assignedDoctorName }));
+                      visitEntries.push({ roomTypeName: rt?.name ?? "—", charge: half, _slotDefaultCharge: half, _chargeEntryId: rc.id, _roomTypeId: rc.roomTypeId, _slotIndex: 0 });
+                      visitEntries.push({ roomTypeName: rt?.name ?? "—", charge: (rc.visitCharge ?? 0) - half, _slotDefaultCharge: (rc.visitCharge ?? 0) - half, _chargeEntryId: rc.id, _roomTypeId: rc.roomTypeId, _slotIndex: 1 });
+                    } else {
+                      entries.forEach((rc: any, idx: number) => {
+                        const rt = roomTypes.find((r: any) => r.id === rc.roomTypeId);
+                        visitEntries.push({ roomTypeName: rt?.name ?? "—", charge: rc.visitCharge ?? 0, _slotDefaultCharge: rc.visitCharge ?? 0, _chargeEntryId: rc.id, _roomTypeId: rc.roomTypeId, _slotIndex: idx });
+                      });
+                    }
+                    dayEntries.push({ date: dateKey, _date: new Date(entries[0].date), visitEntries, doctorName: assignedDoctorName });
+                  }
+                  dayEntries.sort((a: any, b: any) => a._date.getTime() - b._date.getTime());
+                } else {
+                  dayEntries = computeDailyRoomCharges(patient, roomSwitches, roomTypes)
+                    .filter((r: any) => (r.visitCharge ?? 0) > 0)
+                    .map((r: any) => ({
+                      ...r,
+                      _date: new Date(r.date),
+                      doctorName: assignedDoctorName,
+                      visitEntries: (r.visitEntries as any[]).map((ve: any, idx: number) => ({
+                        ...ve,
+                        _slotDefaultCharge: ve.charge,
+                        _roomTypeId: r.roomTypeId,
+                        _chargeEntryId: null,
+                        _slotIndex: idx,
+                      })),
+                    }));
+                }
 
                 dayEntries.forEach((day: any, dayIdx: number) => {
-                  (day.visitEntries as { roomTypeName: string; charge: number }[]).forEach((entry, entryIdx) => {
+                  (day.visitEntries as any[]).forEach((entry, entryIdx) => {
                     dailyVisitRows.push({
                       _key: `daily-${dayIdx}-${entryIdx}`,
                       _isDaily: true,
@@ -324,6 +453,10 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                       doctorName: day.doctorName,
                       roomTypeName: entry.roomTypeName,
                       charge: entry.charge,
+                      _slotDefaultCharge: entry._slotDefaultCharge ?? entry.charge,
+                      _chargeEntryId: entry._chargeEntryId ?? null,
+                      _roomTypeId: entry._roomTypeId ?? null,
+                      _slotIndex: entry._slotIndex ?? entryIdx,
                     });
                   });
                 });
@@ -343,12 +476,12 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
               const allRows = [...dailyVisitRows, ...manualRows].sort((a, b) => a._date.getTime() - b._date.getTime());
 
               if (allRows.length === 0) {
-                return <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-6">No visits recorded yet.</TableCell></TableRow>;
+                return <TableRow><TableCell colSpan={canManage ? 5 : 4} className="text-center text-muted-foreground py-6">No visits recorded yet.</TableCell></TableRow>;
               }
 
               return allRows.map((row) =>
                 row._isDaily ? (
-                  <TableRow key={row._key}>
+                  <TableRow key={row._key} className={row.charge === 0 ? "opacity-50" : ""}>
                     <TableCell className="font-medium">{format(row._date, "dd MMM yyyy")}</TableCell>
                     <TableCell>
                       <span className="flex items-center gap-2">
@@ -357,7 +490,21 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{row.roomTypeName}</TableCell>
-                    <TableCell className="text-right font-medium">₹{row.charge.toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-medium">
+                      {row.charge === 0 ? <span className="text-muted-foreground line-through">Removed</span> : `₹${row.charge.toLocaleString()}`}
+                    </TableCell>
+                    {canManage && (
+                      <TableCell className="text-right">
+                        <span className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isBusy} onClick={() => handleDailyVisitEdit(row)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" disabled={isBusy || row.charge === 0} onClick={() => handleDailyVisitDelete(row)}>
+                            {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                          </Button>
+                        </span>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ) : (
                   <TableRow key={row._key}>
@@ -365,6 +512,7 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                     <TableCell>Dr. {doctors?.find((d: any) => d.id === row.doctorId)?.name || 'Unknown'}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{row.roomTypeName}</TableCell>
                     <TableCell className="text-right font-medium">₹{row.charge.toLocaleString()}</TableCell>
+                    {canManage && <TableCell />}
                   </TableRow>
                 )
               );
@@ -372,6 +520,40 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
           </TableBody>
         </Table>
       </CardContent>
+
+      {/* Edit daily visit charge dialog */}
+      <Dialog open={isDailyEditOpen} onOpenChange={(v) => { setIsDailyEditOpen(v); if (!v) setEditingDailyVisit(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Visit Charge</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {editingDailyVisit && (
+              <p className="text-sm text-muted-foreground">
+                {format(editingDailyVisit.row._date, "dd MMM yyyy")} · {editingDailyVisit.row.roomTypeName} · Visit {(editingDailyVisit.row._slotIndex ?? 0) + 1}
+              </p>
+            )}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Charge (₹)</label>
+              <Input
+                type="number"
+                min="0"
+                value={dailyEditCharge}
+                onChange={(e) => setDailyEditCharge(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleDailyEditSave()}
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setIsDailyEditOpen(false); setEditingDailyVisit(null); }}>Cancel</Button>
+              <Button onClick={handleDailyEditSave} disabled={updateVisitChargeMutation.isPending}>
+                {updateVisitChargeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -1257,6 +1439,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
       result.push({
         date: format(current, "yyyy-MM-dd"),
         roomTypeName: oldRt?.name ?? "?",
+        roomTypeId: switchOnDay.fromRoomTypeId,
         roomCharge: Math.round((oldRt?.dailyCharge ?? 0) / 2),
         nursingCharge: Math.round((oldRt?.nursingCharge ?? 0) / 2),
         rmoCharge: Math.round((oldRt?.rmoCharge ?? 0) / 2),
@@ -1268,6 +1451,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
       result.push({
         date: format(current, "yyyy-MM-dd"),
         roomTypeName: newRt?.name ?? "?",
+        roomTypeId: switchOnDay.toRoomTypeId,
         roomCharge: Math.round((newRt?.dailyCharge ?? 0) / 2),
         nursingCharge: Math.round((newRt?.nursingCharge ?? 0) / 2),
         rmoCharge: Math.round((newRt?.rmoCharge ?? 0) / 2),
@@ -1286,6 +1470,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
       result.push({
         date: format(current, "yyyy-MM-dd"),
         roomTypeName: rt?.name ?? "Unknown",
+        roomTypeId,
         roomCharge: rt?.dailyCharge ?? 0,
         nursingCharge: rt?.nursingCharge ?? 0,
         rmoCharge: rt?.rmoCharge ?? 0,
