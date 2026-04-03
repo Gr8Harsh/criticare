@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft, BedDouble } from "lucide-react";
+import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft, BedDouble, UserCheck } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -161,7 +161,7 @@ export default function PatientDetails() {
         </TabsList>
         
         <div className="mt-6">
-          <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} /></TabsContent>
+          <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} visitCharges={bill.visitCharges} /></TabsContent>
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
@@ -186,13 +186,14 @@ export default function PatientDetails() {
 // TABS COMPONENTS
 // ----------------------------------------------------------------------------
 
-function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[], isManager: boolean }) {
+function VisitsTab({ patient, visits, isManager, visitCharges }: { patient: any, visits: any[], isManager: boolean, visitCharges?: number }) {
   const { data: user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
   const { data: doctors } = useDoctors();
+  const { data: roomTypes } = useRoomTypes();
   const createVisit = useCreateVisit();
   const assignDoctor = useAssignDoctor();
 
@@ -276,11 +277,39 @@ function VisitsTab({ patient, visits, isManager }: { patient: any, visits: any[]
           </div>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {(() => {
+          const roomType = roomTypes?.find((r: any) => r.id === patient.roomTypeId);
+          const dailyVisitCharge = roomType?.visitCharge ?? 0;
+          if (dailyVisitCharge > 0 || (visitCharges ?? 0) > 0) {
+            return (
+              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-primary/5 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <UserCheck className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Daily Visit Charge</p>
+                    <p className="text-xs text-muted-foreground">
+                      ₹{dailyVisitCharge.toLocaleString()}/day · {roomType?.name ?? "Current room"} · auto-calculated
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-primary">₹{(visitCharges ?? 0).toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">total</p>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
         <Table>
           <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Doctor</TableHead><TableHead className="text-right">Charge</TableHead></TableRow></TableHeader>
           <TableBody>
-            {visits.map((v: any) => (
+            {visits.length === 0 ? (
+              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">No visits recorded yet.</TableCell></TableRow>
+            ) : visits.map((v: any) => (
               <TableRow key={v.id}>
                 <TableCell>{format(new Date(v.date), "MMM dd, yyyy HH:mm")}</TableCell>
                 <TableCell>Dr. {doctors?.find(d => d.id === v.doctorId)?.name || 'Unknown'}</TableCell>
