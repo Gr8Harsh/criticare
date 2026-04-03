@@ -161,7 +161,7 @@ export default function PatientDetails() {
         </TabsList>
         
         <div className="mt-6">
-          <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} visitCharges={bill.visitCharges} /></TabsContent>
+          <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} visitCharges={bill.visitCharges} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} /></TabsContent>
           <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
@@ -186,7 +186,7 @@ export default function PatientDetails() {
 // TABS COMPONENTS
 // ----------------------------------------------------------------------------
 
-function VisitsTab({ patient, visits, isManager, visitCharges }: { patient: any, visits: any[], isManager: boolean, visitCharges?: number }) {
+function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, roomSwitches }: { patient: any, visits: any[], isManager: boolean, visitCharges?: number, roomChargesList: any[], roomSwitches: any[] }) {
   const { data: user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const canManage = isManager || isAdmin;
@@ -277,47 +277,77 @@ function VisitsTab({ patient, visits, isManager, visitCharges }: { patient: any,
           </div>
         )}
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="p-0 space-y-0">
         {(() => {
-          const roomType = roomTypes?.find((r: any) => r.id === patient.roomTypeId);
-          const dailyVisitCharge = roomType?.visitCharge ?? 0;
-          if (dailyVisitCharge > 0 || (visitCharges ?? 0) > 0) {
-            return (
-              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-primary/5 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <UserCheck className="w-4 h-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Daily Visit Charge</p>
-                    <p className="text-xs text-muted-foreground">
-                      ₹{dailyVisitCharge.toLocaleString()}/day · {roomType?.name ?? "Current room"} · auto-calculated
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-primary">₹{(visitCharges ?? 0).toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">total</p>
-                </div>
+          if (!roomTypes) return null;
+          const hasExplicit = roomChargesList.length > 0;
+          const dailyRows: any[] = hasExplicit
+            ? roomChargesList.filter((rc: any) => (rc.visitCharge ?? 0) > 0)
+            : computeDailyRoomCharges(patient, roomSwitches, roomTypes).filter((r: any) => (r.visitCharge ?? 0) > 0);
+          if (dailyRows.length === 0) return null;
+          const totalVisit = dailyRows.reduce((s: number, r: any) => s + (r.visitCharge ?? 0), 0);
+          return (
+            <div className="border-b border-border/50">
+              <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+                <UserCheck className="w-4 h-4 text-primary" />
+                <p className="text-sm font-semibold">Daily Visit Charges</p>
+                {!hasExplicit && <span className="text-[10px] bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-normal">Auto-calculated</span>}
               </div>
-            );
-          }
-          return null;
+              <Table>
+                <TableHeader className="bg-secondary/30">
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Room Type</TableHead>
+                    <TableHead className="text-right">Visit Charge (₹)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dailyRows.map((r: any, idx: number) => {
+                    const rtName = hasExplicit
+                      ? (roomTypes.find((rt: any) => rt.id === r.roomTypeId)?.name ?? "—")
+                      : r.roomTypeName;
+                    return (
+                      <TableRow key={hasExplicit ? r.id : idx}>
+                        <TableCell className="font-medium">{format(new Date(r.date), "dd MMM yyyy")}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{rtName}</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">₹{(r.visitCharge ?? 0).toLocaleString()}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <div className="flex justify-end px-4 py-2 bg-secondary/20 text-sm font-semibold border-t border-border/50">
+                <span className="text-primary">Total Visit Charges: ₹{totalVisit.toLocaleString()}</span>
+              </div>
+            </div>
+          );
         })()}
-        <Table>
-          <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Doctor</TableHead><TableHead className="text-right">Charge</TableHead></TableRow></TableHeader>
-          <TableBody>
-            {visits.length === 0 ? (
-              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">No visits recorded yet.</TableCell></TableRow>
-            ) : visits.map((v: any) => (
-              <TableRow key={v.id}>
-                <TableCell>{format(new Date(v.date), "MMM dd, yyyy HH:mm")}</TableCell>
-                <TableCell>Dr. {doctors?.find(d => d.id === v.doctorId)?.name || 'Unknown'}</TableCell>
-                <TableCell className="text-right font-medium">₹{v.charge}</TableCell>
+        <div className="px-0">
+          <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+            <Activity className="w-4 h-4 text-primary" />
+            <p className="text-sm font-semibold">Doctor Visits</p>
+          </div>
+          <Table>
+            <TableHeader className="bg-secondary/30">
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Doctor</TableHead>
+                <TableHead className="text-right">Charge (₹)</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {visits.length === 0 ? (
+                <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">No doctor visits recorded yet.</TableCell></TableRow>
+              ) : visits.map((v: any) => (
+                <TableRow key={v.id}>
+                  <TableCell>{format(new Date(v.date), "dd MMM yyyy, HH:mm")}</TableCell>
+                  <TableCell>Dr. {doctors?.find(d => d.id === v.doctorId)?.name || 'Unknown'}</TableCell>
+                  <TableCell className="text-right font-medium">₹{v.charge}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );
