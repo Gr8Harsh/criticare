@@ -236,14 +236,15 @@ export async function registerRoutes(
       const switches = await storage.getRoomSwitchesByPatient(patientId);
       switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
 
-      const addSegmentCharges = (roomTypeId: number, days: number) => {
+      // Adds room/nursing/rmo charges for a number of days (visit charge handled separately for switch days)
+      const addSegmentCharges = (roomTypeId: number, days: number, includeVisit = true) => {
         if (days <= 0) return;
         const rt = allRoomTypes.find((r) => r.id === roomTypeId);
         if (!rt) return;
         roomCharge += days * rt.dailyCharge;
         roomNursingCharges += days * (rt.nursingCharge ?? 0);
         rmoCharges += days * (rt.rmoCharge ?? 0);
-        visitCharges += days * (rt.visitCharge ?? 0);
+        if (includeVisit) visitCharges += days * (rt.visitCharge ?? 0);
       };
 
       const toMidnight = (d: Date) => {
@@ -266,8 +267,18 @@ export async function registerRoutes(
           const switchDay = toMidnight(new Date(sw.switchDate));
           const diffDays = Math.max(0, calendarDayDiff(prevDay, switchDay));
           if (sw.isHalfDay) {
-            addSegmentCharges(prevRoomTypeId, diffDays + 0.5);
-            addSegmentCharges(sw.toRoomTypeId, 0.5);
+            // Room/nursing/rmo: half-day split (no visit charge yet)
+            addSegmentCharges(prevRoomTypeId, diffDays + 0.5, false);
+            addSegmentCharges(sw.toRoomTypeId, 0.5, false);
+            // Visit charge for regular days before switch day
+            const oldRt = allRoomTypes.find((r) => r.id === prevRoomTypeId);
+            visitCharges += diffDays * (oldRt?.visitCharge ?? 0);
+            // Visit charge for the switch day itself — determined by visitDistribution
+            const newRt = allRoomTypes.find((r) => r.id === sw.toRoomTypeId);
+            const dist = sw.visitDistribution ?? "old_new";
+            if (dist === "old_twice") visitCharges += 2 * (oldRt?.visitCharge ?? 0);
+            else if (dist === "new_twice") visitCharges += 2 * (newRt?.visitCharge ?? 0);
+            else visitCharges += (oldRt?.visitCharge ?? 0) + (newRt?.visitCharge ?? 0); // old_new
             const nextDay = new Date(switchDay);
             nextDay.setDate(nextDay.getDate() + 1);
             prevDay = nextDay;
@@ -350,15 +361,17 @@ export async function registerRoutes(
       if (!patient) return res.status(404).json({ message: "Patient not found" });
       if (patient.discharged) return res.status(400).json({ message: "Cannot switch room for a discharged patient" });
 
-      const { toRoomTypeId, isHalfDay, notes } = req.body;
+      const { toRoomTypeId, isHalfDay, visitDistribution, notes } = req.body;
       if (!toRoomTypeId) return res.status(400).json({ message: "toRoomTypeId is required" });
       if (patient.roomTypeId === Number(toRoomTypeId)) return res.status(400).json({ message: "Patient is already in this room type" });
 
+      const halfDay = isHalfDay !== false;
       const sw = await storage.createRoomSwitch({
         patientId,
         fromRoomTypeId: patient.roomTypeId,
         toRoomTypeId: Number(toRoomTypeId),
-        isHalfDay: isHalfDay !== false,
+        isHalfDay: halfDay,
+        visitDistribution: halfDay ? (visitDistribution ?? "old_new") : "old_new",
         notes: notes || null,
       });
 

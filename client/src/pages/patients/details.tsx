@@ -1208,13 +1208,18 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
     if (switchOnDay && switchOnDay.isHalfDay) {
       const oldRt = roomTypes.find((r: any) => r.id === switchOnDay.fromRoomTypeId);
       const newRt = roomTypes.find((r: any) => r.id === switchOnDay.toRoomTypeId);
+      const dist = switchOnDay.visitDistribution ?? "old_new";
+      let visitCharge = 0;
+      if (dist === "old_twice") visitCharge = 2 * (oldRt?.visitCharge ?? 0);
+      else if (dist === "new_twice") visitCharge = 2 * (newRt?.visitCharge ?? 0);
+      else visitCharge = (oldRt?.visitCharge ?? 0) + (newRt?.visitCharge ?? 0);
       result.push({
         date: format(current, "yyyy-MM-dd"),
         roomTypeName: `${oldRt?.name ?? "?"} → ${newRt?.name ?? "?"} (half-day switch)`,
         roomCharge: Math.round(((oldRt?.dailyCharge ?? 0) + (newRt?.dailyCharge ?? 0)) / 2),
         nursingCharge: Math.round(((oldRt?.nursingCharge ?? 0) + (newRt?.nursingCharge ?? 0)) / 2),
         rmoCharge: Math.round(((oldRt?.rmoCharge ?? 0) + (newRt?.rmoCharge ?? 0)) / 2),
-        visitCharge: Math.round(((oldRt?.visitCharge ?? 0) + (newRt?.visitCharge ?? 0)) / 2),
+        visitCharge,
         isComputed: true,
       });
     } else {
@@ -1518,8 +1523,10 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
   const [open, setOpen] = useState(false);
 
   const switchForm = useForm({
-    defaultValues: { toRoomTypeId: "", isHalfDay: "true", notes: "" }
+    defaultValues: { toRoomTypeId: "", isHalfDay: "true", visitDistribution: "old_new", notes: "" }
   });
+
+  const watchIsHalfDay = switchForm.watch("isHalfDay");
 
   const switchMutation = useMutation({
     mutationFn: (data: any) =>
@@ -1529,6 +1536,7 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
         body: JSON.stringify({
           toRoomTypeId: parseInt(data.toRoomTypeId),
           isHalfDay: data.isHalfDay === "true",
+          visitDistribution: data.isHalfDay === "true" ? data.visitDistribution : "old_new",
           notes: data.notes || null,
         }),
         credentials: "include",
@@ -1608,6 +1616,23 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
                       <FormMessage />
                     </FormItem>
                   )} />
+                  {watchIsHalfDay === "true" && (
+                    <FormField control={switchForm.control} name="visitDistribution" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Doctor Visit Today</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl><SelectTrigger data-testid="select-visit-distribution"><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="old_new">Old room once + New room once</SelectItem>
+                            <SelectItem value="old_twice">Old room twice</SelectItem>
+                            <SelectItem value="new_twice">New room twice</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">How did the doctor visit on the switch day?</p>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
                   <FormField control={switchForm.control} name="notes" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Notes (optional)</FormLabel>
@@ -1636,6 +1661,7 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
                 <TableHead>From Room</TableHead>
                 <TableHead>To Room</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Doctor Visits</TableHead>
                 <TableHead>Notes</TableHead>
               </TableRow>
             </TableHeader>
@@ -1643,6 +1669,11 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
               {roomSwitches.map((sw: any) => {
                 const fromRoom = roomTypes?.find((r: any) => r.id === sw.fromRoomTypeId);
                 const toRoom = roomTypes?.find((r: any) => r.id === sw.toRoomTypeId);
+                const visitDistLabel =
+                  !sw.isHalfDay ? "—"
+                  : sw.visitDistribution === "old_twice" ? `${fromRoom?.name ?? "Old"} ×2`
+                  : sw.visitDistribution === "new_twice" ? `${toRoom?.name ?? "New"} ×2`
+                  : `${fromRoom?.name ?? "Old"} + ${toRoom?.name ?? "New"}`;
                 return (
                   <TableRow key={sw.id} data-testid={`row-room-switch-${sw.id}`}>
                     <TableCell>{format(new Date(sw.switchDate), "MMM dd, yyyy")}</TableCell>
@@ -1659,6 +1690,7 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
                         {sw.isHalfDay ? "Half Day" : "Full Day"}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{visitDistLabel}</TableCell>
                     <TableCell className="text-muted-foreground">{sw.notes || "—"}</TableCell>
                   </TableRow>
                 );

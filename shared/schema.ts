@@ -148,6 +148,8 @@ export const roomSwitches = pgTable("room_switches", {
   toRoomTypeId: integer("to_room_type_id").notNull(),
   switchDate: timestamp("switch_date").defaultNow().notNull(),
   isHalfDay: boolean("is_half_day").default(true).notNull(),
+  // 'old_twice' | 'old_new' | 'new_twice' — controls how visit charge is split on switch day
+  visitDistribution: text("visit_distribution").default("old_new").notNull(),
   notes: text("notes"),
 });
 
