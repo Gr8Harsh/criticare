@@ -284,41 +284,66 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Doctor</TableHead>
+              <TableHead>Room</TableHead>
               <TableHead className="text-right">Charge (₹)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(() => {
-              // Build daily visit rows from room charges
               const assignedDoctorName = assignedDoctors && assignedDoctors.length > 0 ? assignedDoctors[0].doctorName : null;
               const hasExplicit = roomChargesList.length > 0;
-              const dailyVisitRows: any[] = roomTypes
-                ? (hasExplicit
-                    ? roomChargesList.filter((rc: any) => (rc.visitCharge ?? 0) > 0)
-                    : computeDailyRoomCharges(patient, roomSwitches, roomTypes).filter((r: any) => (r.visitCharge ?? 0) > 0)
-                  ).map((r: any, idx: number) => ({
-                    _key: `daily-${idx}`,
-                    _isDaily: true,
-                    _date: new Date(r.date),
-                    date: r.date,
-                    doctorName: assignedDoctorName,
-                    charge: r.visitCharge ?? 0,
-                  }))
-                : [];
 
+              // Build 2 visit entries per day from computed or explicit room charges
+              const dailyVisitRows: any[] = [];
+              if (roomTypes) {
+                const dayEntries = hasExplicit
+                  ? roomChargesList.filter((rc: any) => (rc.visitCharge ?? 0) > 0).map((rc: any) => {
+                      const rt = roomTypes.find((r: any) => r.id === rc.roomTypeId);
+                      const half = Math.round((rc.visitCharge ?? 0) / 2);
+                      return {
+                        date: rc.date,
+                        _date: new Date(rc.date),
+                        visitEntries: [
+                          { roomTypeName: rt?.name ?? "—", charge: half },
+                          { roomTypeName: rt?.name ?? "—", charge: (rc.visitCharge ?? 0) - half },
+                        ],
+                        doctorName: assignedDoctorName,
+                      };
+                    })
+                  : computeDailyRoomCharges(patient, roomSwitches, roomTypes)
+                      .filter((r: any) => (r.visitCharge ?? 0) > 0)
+                      .map((r: any) => ({ ...r, _date: new Date(r.date), doctorName: assignedDoctorName }));
+
+                dayEntries.forEach((day: any, dayIdx: number) => {
+                  (day.visitEntries as { roomTypeName: string; charge: number }[]).forEach((entry, entryIdx) => {
+                    dailyVisitRows.push({
+                      _key: `daily-${dayIdx}-${entryIdx}`,
+                      _isDaily: true,
+                      _date: day._date,
+                      date: day.date,
+                      doctorName: day.doctorName,
+                      roomTypeName: entry.roomTypeName,
+                      charge: entry.charge,
+                    });
+                  });
+                });
+              }
+
+              const currentRoomType = roomTypes?.find((r: any) => r.id === patient.roomTypeId);
               const manualRows = visits.map((v: any) => ({
                 _key: `visit-${v.id}`,
                 _isDaily: false,
                 _date: new Date(v.date),
                 date: v.date,
                 doctorId: v.doctorId,
+                roomTypeName: currentRoomType?.name ?? "—",
                 charge: v.charge,
               }));
 
               const allRows = [...dailyVisitRows, ...manualRows].sort((a, b) => a._date.getTime() - b._date.getTime());
 
               if (allRows.length === 0) {
-                return <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">No visits recorded yet.</TableCell></TableRow>;
+                return <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-6">No visits recorded yet.</TableCell></TableRow>;
               }
 
               return allRows.map((row) =>
@@ -331,12 +356,14 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                         <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Daily Visit</span>
                       </span>
                     </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{row.roomTypeName}</TableCell>
                     <TableCell className="text-right font-medium">₹{row.charge.toLocaleString()}</TableCell>
                   </TableRow>
                 ) : (
                   <TableRow key={row._key}>
                     <TableCell className="font-medium">{format(row._date, "dd MMM yyyy, HH:mm")}</TableCell>
                     <TableCell>Dr. {doctors?.find((d: any) => d.id === row.doctorId)?.name || 'Unknown'}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{row.roomTypeName}</TableCell>
                     <TableCell className="text-right font-medium">₹{row.charge.toLocaleString()}</TableCell>
                   </TableRow>
                 )
@@ -1210,9 +1237,26 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
       const newRt = roomTypes.find((r: any) => r.id === switchOnDay.toRoomTypeId);
       const dist = switchOnDay.visitDistribution ?? "old_new";
       let visitCharge = 0;
-      if (dist === "old_twice") visitCharge = 2 * (oldRt?.visitCharge ?? 0);
-      else if (dist === "new_twice") visitCharge = 2 * (newRt?.visitCharge ?? 0);
-      else visitCharge = (oldRt?.visitCharge ?? 0) + (newRt?.visitCharge ?? 0);
+      let visitEntries: { roomTypeName: string; charge: number }[];
+      if (dist === "old_twice") {
+        visitCharge = 2 * (oldRt?.visitCharge ?? 0);
+        visitEntries = [
+          { roomTypeName: oldRt?.name ?? "?", charge: oldRt?.visitCharge ?? 0 },
+          { roomTypeName: oldRt?.name ?? "?", charge: oldRt?.visitCharge ?? 0 },
+        ];
+      } else if (dist === "new_twice") {
+        visitCharge = 2 * (newRt?.visitCharge ?? 0);
+        visitEntries = [
+          { roomTypeName: newRt?.name ?? "?", charge: newRt?.visitCharge ?? 0 },
+          { roomTypeName: newRt?.name ?? "?", charge: newRt?.visitCharge ?? 0 },
+        ];
+      } else {
+        visitCharge = (oldRt?.visitCharge ?? 0) + (newRt?.visitCharge ?? 0);
+        visitEntries = [
+          { roomTypeName: oldRt?.name ?? "?", charge: oldRt?.visitCharge ?? 0 },
+          { roomTypeName: newRt?.name ?? "?", charge: newRt?.visitCharge ?? 0 },
+        ];
+      }
       result.push({
         date: format(current, "yyyy-MM-dd"),
         roomTypeName: `${oldRt?.name ?? "?"} → ${newRt?.name ?? "?"} (half-day switch)`,
@@ -1220,6 +1264,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         nursingCharge: Math.round(((oldRt?.nursingCharge ?? 0) + (newRt?.nursingCharge ?? 0)) / 2),
         rmoCharge: Math.round(((oldRt?.rmoCharge ?? 0) + (newRt?.rmoCharge ?? 0)) / 2),
         visitCharge,
+        visitEntries,
         isComputed: true,
       });
     } else {
@@ -1235,6 +1280,10 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         nursingCharge: rt?.nursingCharge ?? 0,
         rmoCharge: rt?.rmoCharge ?? 0,
         visitCharge: (rt?.visitCharge ?? 0) * 2,
+        visitEntries: [
+          { roomTypeName: rt?.name ?? "Unknown", charge: rt?.visitCharge ?? 0 },
+          { roomTypeName: rt?.name ?? "Unknown", charge: rt?.visitCharge ?? 0 },
+        ],
         isComputed: true,
       });
     }
