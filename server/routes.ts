@@ -729,6 +729,7 @@ export async function registerRoutes(
       const patientId = Number(req.params.id);
       const data = z.object({
         surgeryName: z.string().optional(),
+        date: z.string().optional(),
         surgeryCharge: z.coerce.number().min(0).default(0),
         surgeonCharge: z.coerce.number().min(0).default(0),
         assistantSurgeonCharge: z.coerce.number().min(0).default(0),
@@ -736,7 +737,10 @@ export async function registerRoutes(
         otCharge: z.coerce.number().min(0).default(0),
         otAssistantCharge: z.coerce.number().min(0).default(0),
       }).parse(req.body);
-      const surgery = await storage.createPatientSurgery({ patientId, ...data });
+      const { date, ...rest } = data;
+      const surgeryData: any = { patientId, ...rest };
+      if (date) surgeryData.date = new Date(date);
+      const surgery = await storage.createPatientSurgery(surgeryData);
       res.status(201).json(surgery);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });

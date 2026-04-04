@@ -1259,12 +1259,13 @@ const SURGERY_CATEGORIES = [
   { key: "otAssistantCharge",      label: "OT Assistant Charge",     category: "OT_ASSISTANT" },
 ] as const;
 
-// Mapping from surgery category key to doctor filter role and surgery-charge category key
-const DOCTOR_CATEGORY_CONFIG: Record<string, { roleFilter: "isSurgeon" | "isAssistantSurgeon" | "isOtAssistant" | null; chargeCategory: string }> = {
+// Mapping from surgery category key to doctor filter role and surgery-charge category key.
+// noDoctor: true means this line shows only a charge input (no doctor dropdown).
+const DOCTOR_CATEGORY_CONFIG: Record<string, { roleFilter: "isSurgeon" | "isAssistantSurgeon" | "isOtAssistant" | "isAnaesthetist" | null; chargeCategory: string; noDoctor?: boolean }> = {
   surgeonCharge:          { roleFilter: "isSurgeon",           chargeCategory: "SURGEON" },
   assistantSurgeonCharge: { roleFilter: "isAssistantSurgeon",  chargeCategory: "ASSISTANT_SURGEON" },
-  anaesthetistCharge:     { roleFilter: null,                  chargeCategory: "ANAESTHETIST" },
-  otCharge:               { roleFilter: null,                  chargeCategory: "OT" },
+  anaesthetistCharge:     { roleFilter: "isAnaesthetist",      chargeCategory: "ANAESTHETIST" },
+  otCharge:               { roleFilter: null,                  chargeCategory: "OT",   noDoctor: true },
   otAssistantCharge:      { roleFilter: "isOtAssistant",       chargeCategory: "OT_ASSISTANT" },
 };
 
@@ -1280,11 +1281,12 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
 
   const { data: surgeryNamesList } = useQuery<any[]>({ queryKey: ["/api/surgery-names"] });
   const [selectedSurgeryName, setSelectedSurgeryName] = useState<string>("");
+  const [surgeryDate, setSurgeryDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const defaultCharges = { surgeryCharge: "", surgeonCharge: "", assistantSurgeonCharge: "", anaesthetistCharge: "", otCharge: "", otAssistantCharge: "" };
   const [charges, setCharges] = useState<Record<string, string>>({ ...defaultCharges });
   const [selectedDoctors, setSelectedDoctors] = useState<Record<string, string>>({});
 
-  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); setSelectedSurgeryName(""); };
+  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); setSelectedSurgeryName(""); setSurgeryDate(format(new Date(), "yyyy-MM-dd")); };
 
   const handleCatalogSelect = (categoryKey: string, catalogId: string, cat: string) => {
     const item = catalog?.find((c: any) => c.id.toString() === catalogId && c.category === cat);
@@ -1313,6 +1315,7 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
       const body = {
         ...chargeBody,
         ...(selectedSurgeryName ? { surgeryName: selectedSurgeryName } : {}),
+        date: surgeryDate,
       };
       const res = await fetch(`/api/patients/${patient.id}/surgeries`, {
         method: "POST",
@@ -1370,6 +1373,18 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                 <DialogTitle className="font-display">Record Surgery Charges</DialogTitle>
               </DialogHeader>
               <div className="space-y-3 pt-1 max-h-[70vh] overflow-y-auto pr-1">
+
+                {/* Date */}
+                <div className="border border-border/50 rounded-lg p-3 space-y-1.5 bg-secondary/20">
+                  <p className="text-sm font-semibold text-foreground">Surgery Date</p>
+                  <Input
+                    type="date"
+                    value={surgeryDate}
+                    onChange={(e) => setSurgeryDate(e.target.value)}
+                    data-testid="input-surgery-date"
+                    className="w-full"
+                  />
+                </div>
 
                 {/* Surgery Name selector */}
                 <div className="border border-primary/30 rounded-lg p-3 space-y-1.5 bg-primary/5">
@@ -1437,23 +1452,25 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                     <div key={key} className="border border-border/50 rounded-lg p-3 space-y-2 bg-secondary/20">
                       <p className="text-sm font-semibold text-foreground">{label}</p>
                       <div className="flex gap-2 items-center">
-                        <Select
-                          value={selectedDoctors[key] ?? ""}
-                          onValueChange={(val) => handleDoctorSelect(key, val)}
-                        >
-                          <SelectTrigger className="flex-1" data-testid={`select-doctor-${key}`}>
-                            <SelectValue placeholder={doctors.length > 0 ? "Select doctor…" : "No doctors available"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none">— None —</SelectItem>
-                            {doctors.map((d: any) => (
-                              <SelectItem key={d.id} value={d.id.toString()}>
-                                Dr. {d.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="relative w-32 shrink-0">
+                        {!config?.noDoctor && (
+                          <Select
+                            value={selectedDoctors[key] ?? ""}
+                            onValueChange={(val) => handleDoctorSelect(key, val)}
+                          >
+                            <SelectTrigger className="flex-1" data-testid={`select-doctor-${key}`}>
+                              <SelectValue placeholder={doctors.length > 0 ? "Select doctor…" : "No doctors available"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none">— None —</SelectItem>
+                              {doctors.map((d: any) => (
+                                <SelectItem key={d.id} value={d.id.toString()}>
+                                  Dr. {d.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <div className={`relative ${config?.noDoctor ? "w-full" : "w-32 shrink-0"}`}>
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
                           <Input
                             type="number" min="0" className="pl-7" placeholder="0"
@@ -1463,7 +1480,7 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                           />
                         </div>
                       </div>
-                      {selectedDoctors[key] && selectedDoctors[key] !== "__none" && charges[key] && (
+                      {!config?.noDoctor && selectedDoctors[key] && selectedDoctors[key] !== "__none" && charges[key] && (
                         <p className="text-xs text-primary">
                           Auto-filled from Dr. {doctors.find((d: any) => d.id.toString() === selectedDoctors[key])?.name}'s configured rate
                         </p>

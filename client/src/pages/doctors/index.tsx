@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Plus, Search, Stethoscope, Settings2, Scissors, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Search, Stethoscope, Settings2, Scissors, ChevronDown, ChevronRight, Activity } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,6 +41,7 @@ const doctorSchema = z.object({
   isSurgeon: z.boolean().default(false),
   isAssistantSurgeon: z.boolean().default(false),
   isOtAssistant: z.boolean().default(false),
+  isAnaesthetist: z.boolean().default(false),
 });
 
 // ─── Room Charges Dialog ─────────────────────────────────────────────────────
@@ -249,6 +250,7 @@ function SurgeryChargeRow({ category, currentCharge, onSave, isPending }: {
 // ─── Role Badges ─────────────────────────────────────────────────────────────
 
 function DoctorRoleBadges({ doc }: { doc: any }) {
+  const hasRole = doc.isSurgeon || doc.isAssistantSurgeon || doc.isOtAssistant || doc.isAnaesthetist;
   return (
     <div className="flex flex-wrap gap-1">
       {doc.isSurgeon && (
@@ -261,12 +263,17 @@ function DoctorRoleBadges({ doc }: { doc: any }) {
           <Scissors className="w-3 h-3" /> Asst. Surgeon
         </Badge>
       )}
+      {doc.isAnaesthetist && (
+        <Badge className="gap-1 text-xs bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200">
+          <Activity className="w-3 h-3" /> Anaesthetist
+        </Badge>
+      )}
       {doc.isOtAssistant && (
         <Badge className="gap-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200">
           <Settings2 className="w-3 h-3" /> OT Assistant
         </Badge>
       )}
-      {!doc.isSurgeon && !doc.isAssistantSurgeon && !doc.isOtAssistant && (
+      {!hasRole && (
         <Badge variant="secondary" className="gap-1 text-xs">
           <Stethoscope className="w-3 h-3" /> Doctor
         </Badge>
@@ -336,8 +343,10 @@ export default function DoctorsList() {
 
   const doctorForm = useForm<z.infer<typeof doctorSchema>>({
     resolver: zodResolver(doctorSchema),
-    defaultValues: { name: "", specialization: "", visitCharge: 0, userId: 0, isSurgeon: false, isAssistantSurgeon: false, isOtAssistant: false },
+    defaultValues: { name: "", specialization: "", visitCharge: 0, userId: 0, isSurgeon: false, isAssistantSurgeon: false, isOtAssistant: false, isAnaesthetist: false },
   });
+
+  const linkedUserIds = new Set(doctors?.map((d) => d.userId) ?? []);
 
   const filteredDoctors = doctors?.filter((d) => d.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -424,7 +433,7 @@ export default function DoctorsList() {
                         <Select onValueChange={field.onChange} defaultValue={field.value.toString()}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger></FormControl>
                           <SelectContent>
-                            {usersList?.filter((u) => u.role === "DOCTOR").map((u) => (
+                            {usersList?.filter((u) => u.role === "DOCTOR" && !linkedUserIds.has(u.id)).map((u) => (
                               <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.email})</SelectItem>
                             ))}
                           </SelectContent>
@@ -440,6 +449,7 @@ export default function DoctorsList() {
                         {[
                           { name: "isSurgeon" as const, label: "Mark as Surgeon", icon: <Scissors className="w-3.5 h-3.5" />, hint: "Can be assigned as primary surgeon." },
                           { name: "isAssistantSurgeon" as const, label: "Mark as Assistant Surgeon", icon: <Scissors className="w-3.5 h-3.5 opacity-70" />, hint: "Can assist in surgical procedures." },
+                          { name: "isAnaesthetist" as const, label: "Mark as Anaesthetist", icon: <Activity className="w-3.5 h-3.5" />, hint: "Can be assigned as anaesthetist in surgeries." },
                           { name: "isOtAssistant" as const, label: "Mark as OT Assistant", icon: <Settings2 className="w-3.5 h-3.5" />, hint: "Can be assigned as OT assistant." },
                         ].map(({ name, label, icon, hint }) => (
                           <FormField key={name} control={doctorForm.control} name={name} render={({ field }) => (

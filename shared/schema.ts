@@ -45,6 +45,7 @@ export const doctors = pgTable("doctors", {
   isSurgeon: boolean("is_surgeon").default(false).notNull(),
   isAssistantSurgeon: boolean("is_assistant_surgeon").default(false).notNull(),
   isOtAssistant: boolean("is_ot_assistant").default(false).notNull(),
+  isAnaesthetist: boolean("is_anaesthetist").default(false).notNull(),
 });
 
 export const doctorSurgeryCharges = pgTable("doctor_surgery_charges", {
