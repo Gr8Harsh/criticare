@@ -34,6 +34,7 @@ import RoomTypesPage from "@/pages/room-types";
 import ChargeRatesPage from "@/pages/charge-rates";
 import ProceduresPage from "@/pages/procedures/index";
 import SurgeriesPage from "@/pages/surgeries/index";
+import MyPatientsPage from "@/pages/my-patients";
 
 function Router() {
   return (

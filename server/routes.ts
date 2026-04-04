@@ -8,6 +8,11 @@ import { db } from "./db";
 import { users, roomTypes } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
+// Returns current time adjusted to IST (UTC+5:30) so that calendar day
+// boundaries fall at midnight India time instead of midnight UTC.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const nowIST = () => new Date(Date.now() + IST_OFFSET_MS);
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express,
@@ -205,7 +210,7 @@ export async function registerRoutes(
     const dischargeDate =
       patient.discharged && patient.expectedDischargeDate
         ? new Date(patient.expectedDischargeDate)
-        : new Date();
+        : nowIST();
     const daysAdmitted = Math.max(
       1,
       Math.ceil(
@@ -761,7 +766,7 @@ export async function registerRoutes(
       const admissionDate = new Date(patient.admissionDate);
       const dischargeDate = patient.discharged && patient.expectedDischargeDate 
         ? new Date(patient.expectedDischargeDate) 
-        : new Date();
+        : nowIST();
       
       const days = Math.max(1, Math.ceil((dischargeDate.getTime() - admissionDate.getTime()) / (1000 * 3600 * 24)));
       const roomType = roomTypes.find(rt => rt.id === patient.roomTypeId);
