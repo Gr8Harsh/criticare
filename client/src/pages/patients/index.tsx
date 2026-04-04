@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 const formSchema = insertPatientSchema.extend({
   roomTypeId: z.coerce.number().min(1, "Room type is required"),
   doctorId: z.coerce.number().optional(),
+  ipdNumber: z.string().optional(),
 }).partial({
   illness: true,
   phone: true,
@@ -36,7 +37,7 @@ export default function PatientsList() {
 
   const filteredPatients = patients?.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 
-    p.ipdNumber.toLowerCase().includes(search.toLowerCase())
+    (p.ipdNumber ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -140,7 +141,7 @@ function AddPatientForm({ onSuccess }: { onSuccess: () => void }) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: "", gender: "Male", dateOfBirth: "", phone: "", relativePhone: "", illness: "", roomTypeId: 0, bedNumber: "", discharged: false, doctorId: undefined
+      ipdNumber: "", name: "", gender: "Male", dateOfBirth: "", phone: "", relativePhone: "", illness: "", roomTypeId: 0, bedNumber: "", discharged: false, doctorId: undefined
     },
   });
 
@@ -159,6 +160,14 @@ function AddPatientForm({ onSuccess }: { onSuccess: () => void }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+        <FormField control={form.control} name="ipdNumber" render={({ field }) => (
+          <FormItem>
+            <FormLabel>IPD Number <span className="text-muted-foreground font-normal">(Optional — leave blank to mark as N/A)</span></FormLabel>
+            <FormControl><Input placeholder="e.g. IPD-2024-001" data-testid="input-ipd-number" {...field} value={field.value ?? ""} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
+
         <div className="grid grid-cols-2 gap-4">
           <FormField control={form.control} name="name" render={({ field }) => (
             <FormItem><FormLabel>Full Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>

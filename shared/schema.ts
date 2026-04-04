@@ -21,7 +21,7 @@ export const roomTypes = pgTable("room_types", {
 
 export const patients = pgTable("patients", {
   id: serial("id").primaryKey(),
-  ipdNumber: text("ipd_number").notNull().unique(),
+  ipdNumber: text("ipd_number").unique(),
   name: text("name").notNull(),
   gender: text("gender").notNull(),
   dateOfBirth: text("date_of_birth").notNull(),
@@ -168,7 +168,9 @@ export const patientRoomCharges = pgTable("patient_room_charges", {
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertRoomTypeSchema = createInsertSchema(roomTypes).omit({ id: true });
-export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true, ipdNumber: true });
+export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true }).extend({
+  ipdNumber: z.string().optional().nullable(),
+});
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true });
 export const insertPatientDoctorSchema = createInsertSchema(patientDoctors).omit({ id: true });
 export const insertMedicineSchema = createInsertSchema(medicines).omit({ id: true });

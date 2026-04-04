@@ -47,11 +47,11 @@ export class DatabaseStorage {
     const [patient] = await db.select().from(patients).where(eq(patients.id, id));
     return patient;
   }
-  async createPatient(insertPatient: InsertPatient & { doctorId?: number }): Promise<Patient> {
-    const { doctorId, ...patientData } = insertPatient;
+  async createPatient(insertPatient: InsertPatient & { doctorId?: number; ipdNumber?: string | null }): Promise<Patient> {
+    const { doctorId, ipdNumber, ...patientData } = insertPatient as any;
     const [patient] = await db.insert(patients).values({
       ...patientData,
-      ipdNumber: `IPD-${Date.now()}`
+      ipdNumber: ipdNumber && ipdNumber.trim() !== "" ? ipdNumber.trim() : null,
     }).returning();
     
     if (doctorId) {
