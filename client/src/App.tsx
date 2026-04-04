@@ -69,6 +69,9 @@ function Router() {
       <Route path="/charge-rates">
         <Shell><ProtectedRoute component={ChargeRatesPage} /></Shell>
       </Route>
+      <Route path="/my-patients">
+        <Shell><ProtectedRoute component={MyPatientsPage} /></Shell>
+      </Route>
       
       <Route component={NotFound} />
     </Switch>
