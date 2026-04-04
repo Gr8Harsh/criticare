@@ -35,7 +35,41 @@ export default function PatientDetails() {
   const { data: roomTypes } = useRoomTypes();
   const dischargeMutation = useDischargePatient();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
+  const [quickSwitchOpen, setQuickSwitchOpen] = useState(false);
+
+  const switchForm = useForm({
+    defaultValues: { toRoomTypeId: "", isHalfDay: "true", visitDistribution: "old_new", notes: "" },
+  });
+  const watchIsHalfDay = switchForm.watch("isHalfDay");
+
+  const switchMutation = useMutation({
+    mutationFn: (data: any) =>
+      fetch(`/api/patients/${id}/room-switch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toRoomTypeId: parseInt(data.toRoomTypeId),
+          isHalfDay: data.isHalfDay === "true",
+          visitDistribution: data.isHalfDay === "true" ? data.visitDistribution : "old_new",
+          notes: data.notes || null,
+        }),
+        credentials: "include",
+      }).then(async (r) => {
+        if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+        return r.json();
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.get.path, id] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
+      setQuickSwitchOpen(false);
+      switchForm.reset();
+      toast({ title: "Room switched", description: "Patient has been moved to the new room." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
 
   if (pLoading || bLoading) return <div className="flex p-20 justify-center"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>;
   if (!patient || !bill) return (
@@ -107,20 +141,104 @@ export default function PatientDetails() {
               <div><p className="text-muted-foreground mb-1">Bed Assigned</p><p className="font-semibold">{patient.bedNumber || "—"}</p></div>
               <div><p className="text-muted-foreground mb-1">Diagnosis</p><p className="font-semibold">{patient.illness || "Not specified"}</p></div>
               <div><p className="text-muted-foreground mb-1">Assigned Doctor</p><p className="font-semibold">{assignedDoctors && assignedDoctors.length > 0 ? `Dr. ${assignedDoctors[0].doctorName}` : "Not assigned"}</p></div>
-              <div>
+              <div className="col-span-2 md:col-span-1">
                 <p className="text-muted-foreground mb-1">Current Room</p>
-                <p className="font-semibold">
-                  {roomTypes?.find((r: any) => r.id === patient.roomTypeId)?.name ?? "—"}
-                  {roomTypes?.find((r: any) => r.id === patient.roomTypeId) && (
-                    <span className="text-muted-foreground font-normal text-xs ml-1">
-                      ₹{roomTypes.find((r: any) => r.id === patient.roomTypeId)?.dailyCharge}/day
-                    </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold">
+                    {roomTypes?.find((r: any) => r.id === patient.roomTypeId)?.name ?? "—"}
+                    {roomTypes?.find((r: any) => r.id === patient.roomTypeId) && (
+                      <span className="text-muted-foreground font-normal text-xs ml-1">
+                        ₹{roomTypes.find((r: any) => r.id === patient.roomTypeId)?.dailyCharge}/day
+                      </span>
+                    )}
+                  </p>
+                  {!patient.discharged && (user?.role === 'MANAGER' || user?.role === 'ADMIN') && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-xs px-2 py-0 no-print"
+                      onClick={() => setQuickSwitchOpen(true)}
+                      data-testid="button-quick-room-switch"
+                    >
+                      <ArrowRightLeft className="w-3 h-3 mr-1" /> Switch
+                    </Button>
                   )}
-                </p>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Quick Switch Room Dialog */}
+        <Dialog open={quickSwitchOpen} onOpenChange={(v) => { setQuickSwitchOpen(v); if (!v) switchForm.reset(); }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Switch Patient Room</DialogTitle></DialogHeader>
+            <Form {...switchForm}>
+              <form onSubmit={switchForm.handleSubmit((d) => switchMutation.mutate(d))} className="space-y-4">
+                <FormField control={switchForm.control} name="toRoomTypeId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New Room</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select new room" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {roomTypes?.filter((r: any) => r.id !== patient.roomTypeId).map((r: any) => (
+                          <SelectItem key={r.id} value={r.id.toString()}>{r.name} — ₹{r.dailyCharge}/day</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={switchForm.control} name="isHalfDay" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Switch Type</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="true">Half Day — charges split between both rooms today</SelectItem>
+                        <SelectItem value="false">Full Day — new room charge starts from today</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {field.value === "true"
+                        ? "Today: ½ day charge in current room + ½ day charge in new room."
+                        : "Today and onwards fully charged to the new room."}
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                {watchIsHalfDay === "true" && (
+                  <FormField control={switchForm.control} name="visitDistribution" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Doctor Visit Today</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="old_new">Old room once + New room once</SelectItem>
+                          <SelectItem value="old_twice">Old room twice</SelectItem>
+                          <SelectItem value="new_twice">New room twice</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">How did the doctor visit on the switch day?</p>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                )}
+                <FormField control={switchForm.control} name="notes" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes (optional)</FormLabel>
+                    <FormControl><Input placeholder="Reason for switch..." {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <Button type="submit" className="w-full" disabled={switchMutation.isPending}>
+                  {switchMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Confirm Room Switch
+                </Button>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
 
         {/* Quick Stats Card */}
         <Card className="border-border/50 shadow-md">
@@ -160,9 +278,6 @@ export default function PatientDetails() {
         </Card>
       </div>
 
-      {/* Room Switch — part of patient record */}
-      <RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} />
-
       <Tabs defaultValue="visits" className="no-print">
         <TabsList className="bg-secondary/50 p-1 rounded-xl flex-wrap h-auto gap-1">
           <TabsTrigger value="visits" className="rounded-lg px-5"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
@@ -170,6 +285,7 @@ export default function PatientDetails() {
           <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
           <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgery</TabsTrigger>
           <TabsTrigger value="room-charges" className="rounded-lg px-5"><BedDouble className="w-4 h-4 mr-2" /> Room Charges</TabsTrigger>
+          <TabsTrigger value="room-switch" className="rounded-lg px-5"><ArrowRightLeft className="w-4 h-4 mr-2" /> Room Switch</TabsTrigger>
           <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
           <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
         </TabsList>
@@ -180,6 +296,7 @@ export default function PatientDetails() {
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
+          <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
         </div>
