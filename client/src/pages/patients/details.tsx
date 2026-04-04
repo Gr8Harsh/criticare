@@ -1532,20 +1532,23 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
   );
 }
 
-function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: any[]) {
+function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: any[], daysAdmitted?: number) {
   if (!roomTypes) return [];
-  const toMidnight = (d: Date) => { const m = new Date(d); m.setHours(0, 0, 0, 0); return m; };
-  const admissionDay = toMidnight(new Date(patient.admissionDate));
+  // Use UTC midnight to avoid browser timezone shifting the day count
+  const toUTCMidnight = (d: Date) => { const m = new Date(d); m.setUTCHours(0, 0, 0, 0); return m; };
+  const admissionDay = toUTCMidnight(new Date(patient.admissionDate));
   const endDay = patient.discharged && patient.expectedDischargeDate
-    ? toMidnight(new Date(patient.expectedDischargeDate))
-    : toMidnight(new Date());
+    ? toUTCMidnight(new Date(patient.expectedDischargeDate))
+    : toUTCMidnight(new Date());
 
   const sorted = [...roomSwitches].sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
   const initialRoomTypeId = sorted.length > 0 ? sorted[0].fromRoomTypeId : patient.roomTypeId;
   const result: any[] = [];
   let current = new Date(admissionDay);
+  let calendarDays = 0;
+  const maxDays = daysAdmitted ?? Infinity;
 
-  while (current <= endDay) {
+  while (current <= endDay && calendarDays < maxDays) {
     const dayTime = current.getTime();
     const switchOnDay = sorted.find(sw => toMidnight(new Date(sw.switchDate)).getTime() === dayTime);
 
