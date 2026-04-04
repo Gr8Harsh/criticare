@@ -32,6 +32,7 @@ export default function PatientDetails() {
   const { data: patient, isLoading: pLoading } = usePatient(id);
   const { data: bill, isLoading: bLoading } = usePatientBill(id);
   const { data: assignedDoctors } = useAssignedDoctors(id);
+  const { data: roomTypes } = useRoomTypes();
   const dischargeMutation = useDischargePatient();
   const { toast } = useToast();
   const [editOpen, setEditOpen] = useState(false);
@@ -103,9 +104,20 @@ export default function PatientDetails() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
               <div><p className="text-muted-foreground mb-1">Age/Gender</p><p className="font-semibold">{new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()}y / {patient.gender}</p></div>
               <div><p className="text-muted-foreground mb-1">Admission Date</p><p className="font-semibold">{format(new Date(patient.admissionDate), "MMM dd, yyyy")}</p></div>
-              <div><p className="text-muted-foreground mb-1">Bed Assigned</p><p className="font-semibold">{patient.bedNumber}</p></div>
+              <div><p className="text-muted-foreground mb-1">Bed Assigned</p><p className="font-semibold">{patient.bedNumber || "—"}</p></div>
               <div><p className="text-muted-foreground mb-1">Diagnosis</p><p className="font-semibold">{patient.illness || "Not specified"}</p></div>
               <div><p className="text-muted-foreground mb-1">Assigned Doctor</p><p className="font-semibold">{assignedDoctors && assignedDoctors.length > 0 ? `Dr. ${assignedDoctors[0].doctorName}` : "Not assigned"}</p></div>
+              <div>
+                <p className="text-muted-foreground mb-1">Current Room</p>
+                <p className="font-semibold">
+                  {roomTypes?.find((r: any) => r.id === patient.roomTypeId)?.name ?? "—"}
+                  {roomTypes?.find((r: any) => r.id === patient.roomTypeId) && (
+                    <span className="text-muted-foreground font-normal text-xs ml-1">
+                      ₹{roomTypes.find((r: any) => r.id === patient.roomTypeId)?.dailyCharge}/day
+                    </span>
+                  )}
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -148,6 +160,9 @@ export default function PatientDetails() {
         </Card>
       </div>
 
+      {/* Room Switch — part of patient record */}
+      <RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} />
+
       <Tabs defaultValue="visits" className="no-print">
         <TabsList className="bg-secondary/50 p-1 rounded-xl flex-wrap h-auto gap-1">
           <TabsTrigger value="visits" className="rounded-lg px-5"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
@@ -155,7 +170,6 @@ export default function PatientDetails() {
           <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
           <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgery</TabsTrigger>
           <TabsTrigger value="room-charges" className="rounded-lg px-5"><BedDouble className="w-4 h-4 mr-2" /> Room Charges</TabsTrigger>
-          <TabsTrigger value="room-switch" className="rounded-lg px-5"><ArrowRightLeft className="w-4 h-4 mr-2" /> Room Switch</TabsTrigger>
           <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
           <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
         </TabsList>
@@ -166,7 +180,6 @@ export default function PatientDetails() {
           <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
-          <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
         </div>
