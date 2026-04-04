@@ -258,10 +258,15 @@ export default function PatientDetails() {
               <span className="text-muted-foreground">Nursing Charge</span>
               <span className="font-medium">₹{bill.roomNursingCharges.toLocaleString()}</span>
             </div>}
-            {(bill.rmoCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm pb-2 border-b border-border/50">
+            {(bill.rmoCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">RMO Charge</span>
               <span className="font-medium">₹{bill.rmoCharges.toLocaleString()}</span>
             </div>}
+            {(bill.visitCharges ?? 0) > 0 && <div className="flex justify-between items-center text-sm pb-2 border-b border-border/50">
+              <span className="text-muted-foreground">Doctor Visit Charges</span>
+              <span className="font-medium">₹{(bill.visitCharges ?? 0).toLocaleString()}</span>
+            </div>}
+            {((bill.visitCharges ?? 0) === 0) && <div className="pb-2 border-b border-border/50" />}
             <div className="flex justify-between items-center text-sm pb-2 border-b border-border/50">
               <span className="text-muted-foreground">Services &amp; Others</span>
               <span className="font-medium">₹{(bill.doctorCharges + bill.nursingCharges + bill.otherCharges + (bill.procedureCharges ?? 0) + (bill.surgeryCharges ?? 0)).toLocaleString()}</span>
@@ -2141,10 +2146,18 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
                   <TableCell className="text-right">₹{bill.rmoCharges.toLocaleString()}</TableCell>
                 </TableRow>
               )}
-              <TableRow>
-                <TableCell>Doctor Visits ({bill.visits.length})</TableCell>
-                <TableCell className="text-right">₹{bill.doctorCharges}</TableCell>
-              </TableRow>
+              {(bill.visitCharges ?? 0) > 0 && (
+                <TableRow>
+                  <TableCell>Doctor Visit Charges ({bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""})</TableCell>
+                  <TableCell className="text-right">₹{(bill.visitCharges ?? 0).toLocaleString()}</TableCell>
+                </TableRow>
+              )}
+              {(bill.doctorCharges ?? 0) > 0 && (
+                <TableRow>
+                  <TableCell>Doctor Visit Fees ({bill.visits.length} recorded visit{bill.visits.length !== 1 ? "s" : ""})</TableCell>
+                  <TableCell className="text-right">₹{bill.doctorCharges}</TableCell>
+                </TableRow>
+              )}
               <TableRow>
                 <TableCell>Medicines & Pharmacy</TableCell>
                 <TableCell className="text-right">₹{bill.medicineCharges}</TableCell>
