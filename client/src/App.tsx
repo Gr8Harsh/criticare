@@ -7,6 +7,7 @@ import { Shell } from "@/components/layout/shell";
 
 // Pages
 import Login from "@/pages/login";
+import PreviewPage from "@/pages/preview";
 import Dashboard from "@/pages/dashboard";
 import PatientsList from "@/pages/patients/index";
 import PatientDetails from "@/pages/patients/details";
@@ -30,8 +31,8 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
-import RoomTypesPage from "@/pages/room-types";
 import ChargeRatesPage from "@/pages/charge-rates";
+import OtherChargesPage from "@/pages/other-charges";
 import ProceduresPage from "@/pages/procedures/index";
 import SurgeriesPage from "@/pages/surgeries/index";
 import MyPatientsPage from "@/pages/my-patients";
@@ -39,6 +40,7 @@ import MyPatientsPage from "@/pages/my-patients";
 function Router() {
   return (
     <Switch>
+      <Route path="/preview" component={PreviewPage} />
       <Route path="/login" component={Login} />
       
       {/* Protected Routes Wrapped in Shell */}
@@ -64,10 +66,13 @@ function Router() {
         <Shell><ProtectedRoute component={SurgeriesPage} /></Shell>
       </Route>
       <Route path="/room-types">
-        <Shell><ProtectedRoute component={RoomTypesPage} /></Shell>
+        <Shell><ProtectedRoute component={ChargeRatesPage} /></Shell>
       </Route>
       <Route path="/charge-rates">
         <Shell><ProtectedRoute component={ChargeRatesPage} /></Shell>
+      </Route>
+      <Route path="/other-charges">
+        <Shell><ProtectedRoute component={OtherChargesPage} /></Shell>
       </Route>
       <Route path="/my-patients">
         <Shell><ProtectedRoute component={MyPatientsPage} /></Shell>

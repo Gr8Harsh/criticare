@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -107,8 +106,15 @@ export default function Login() {
 
           <div className="mt-8 text-center text-sm text-muted-foreground">
             <p>Demo Accounts:</p>
-            <p className="mt-1">Manager: <span className="font-semibold text-foreground">manager@test.com</span> / password123</p>
+            <p className="mt-1">Admin: <span className="font-semibold text-foreground">admin@test.com</span> / admin123</p>
+            <p>Manager: <span className="font-semibold text-foreground">manager@test.com</span> / password123</p>
             <p>Doctor: <span className="font-semibold text-foreground">doctor@test.com</span> / password123</p>
+          </div>
+
+          <div className="mt-6 flex justify-center">
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link href="/preview">Open Preview Page</Link>
+            </Button>
           </div>
         </CardContent>
       </Card>

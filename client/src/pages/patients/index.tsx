@@ -35,10 +35,12 @@ export default function PatientsList() {
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
 
-  const filteredPatients = patients?.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) || 
-    (p.ipdNumber ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredPatients = patients
+    ?.filter(p => 
+      p.name.toLowerCase().includes(search.toLowerCase()) || 
+      (p.ipdNumber ?? "").toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((left, right) => new Date(right.admissionDate).getTime() - new Date(left.admissionDate).getTime());
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

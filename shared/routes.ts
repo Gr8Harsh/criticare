@@ -64,14 +64,7 @@ export const api = {
         200: z.object({
           totalAdmitted: z.number(),
           totalBedsOccupied: z.number(),
-          totalRevenue: z.number(),
-          revenueBreakdown: z.object({
-            room: z.number(),
-            doctor: z.number(),
-            medicine: z.number(),
-            nursing: z.number(),
-            other: z.number()
-          }),
+          totalDischargedToday: z.number(),
           activeDoctors: z.number(),
         })
       }

@@ -93,6 +93,13 @@ export const charges = pgTable("charges", {
   date: timestamp("date").defaultNow().notNull(),
 });
 
+export const otherChargeCatalog = pgTable("other_charge_catalog", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  category: text("category").notNull(), // 'OTHER' | 'PROSTHESIS' | 'PATHOLOGY' | 'RADIOLOGY'
+  defaultAmount: integer("default_amount").notNull().default(0),
+});
+
 export const procedures = pgTable("procedures", {
   id: serial("id").primaryKey(),
   patientId: integer("patient_id").notNull(),
@@ -177,6 +184,7 @@ export const insertMedicineSchema = createInsertSchema(medicines).omit({ id: tru
 export const insertVisitSchema = createInsertSchema(visits).omit({ id: true, date: true });
 export const insertPrescriptionSchema = createInsertSchema(prescriptions).omit({ id: true, date: true });
 export const insertChargeSchema = createInsertSchema(charges).omit({ id: true, date: true });
+export const insertOtherChargeCatalogSchema = createInsertSchema(otherChargeCatalog).omit({ id: true });
 export const insertProcedureSchema = createInsertSchema(procedures).omit({ id: true, date: true });
 export const insertProcedureCatalogSchema = createInsertSchema(procedureCatalog).omit({ id: true });
 export const insertSurgeryCatalogSchema = createInsertSchema(surgeryCatalog).omit({ id: true });
@@ -197,6 +205,7 @@ export type Medicine = typeof medicines.$inferSelect;
 export type Visit = typeof visits.$inferSelect;
 export type Prescription = typeof prescriptions.$inferSelect;
 export type Charge = typeof charges.$inferSelect;
+export type OtherChargeCatalog = typeof otherChargeCatalog.$inferSelect;
 export type Procedure = typeof procedures.$inferSelect;
 export type ProcedureCatalog = typeof procedureCatalog.$inferSelect;
 export type SurgeryCatalog = typeof surgeryCatalog.$inferSelect;
@@ -220,6 +229,7 @@ export type InsertMedicine = z.infer<typeof insertMedicineSchema>;
 export type InsertVisit = z.infer<typeof insertVisitSchema>;
 export type InsertPrescription = z.infer<typeof insertPrescriptionSchema>;
 export type InsertCharge = z.infer<typeof insertChargeSchema>;
+export type InsertOtherChargeCatalog = z.infer<typeof insertOtherChargeCatalogSchema>;
 export type InsertProcedure = z.infer<typeof insertProcedureSchema>;
 export type InsertProcedureCatalog = z.infer<typeof insertProcedureCatalogSchema>;
 export type InsertSurgeryCatalog = z.infer<typeof insertSurgeryCatalogSchema>;

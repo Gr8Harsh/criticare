@@ -1,10 +1,11 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames, roomSwitches, patientRoomCharges,
+  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, otherChargeCatalog, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames, roomSwitches, patientRoomCharges,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
+  type OtherChargeCatalog, type InsertOtherChargeCatalog,
   type Procedure, type InsertProcedure, type ProcedureCatalog, type InsertProcedureCatalog, type DoctorRoomCharge,
   type DoctorSurgeryCharge,
   type SurgeryCatalog, type InsertSurgeryCatalog, type PatientSurgery, type InsertPatientSurgery,
@@ -130,6 +131,20 @@ export class DatabaseStorage {
   }
   async getCharges(): Promise<Charge[]> {
     return await db.select().from(charges);
+  }
+  async getOtherChargeCatalog(): Promise<OtherChargeCatalog[]> {
+    return await db.select().from(otherChargeCatalog);
+  }
+  async createOtherChargeCatalogItem(data: InsertOtherChargeCatalog): Promise<OtherChargeCatalog> {
+    const [item] = await db.insert(otherChargeCatalog).values(data).returning();
+    return item;
+  }
+  async updateOtherChargeCatalogItem(id: number, data: Partial<InsertOtherChargeCatalog>): Promise<OtherChargeCatalog> {
+    const [item] = await db.update(otherChargeCatalog).set(data).where(eq(otherChargeCatalog.id, id)).returning();
+    return item;
+  }
+  async deleteOtherChargeCatalogItem(id: number): Promise<void> {
+    await db.delete(otherChargeCatalog).where(eq(otherChargeCatalog.id, id));
   }
 
   // Patient Doctors

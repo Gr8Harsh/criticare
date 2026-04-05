@@ -98,6 +98,12 @@ export async function registerRoutes(
     next();
   };
 
+  const requireManager = (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated() || !["ADMIN", "MANAGER"].includes(req.user.role))
+      return res.status(403).json({ message: "Manager access required" });
+    next();
+  };
+
   app.use("/api", (req, res, next) => {
     if (req.path.startsWith("/auth")) return next();
     requireAuth(req, res, next);
@@ -594,6 +600,44 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/other-charge-catalog", async (_req, res) => {
+    const catalog = await storage.getOtherChargeCatalog();
+    res.json(catalog);
+  });
+
+  app.post("/api/other-charge-catalog", requireManager, async (req, res) => {
+    try {
+      const input = z.object({
+        name: z.string().min(1),
+        category: z.enum(["OTHER", "PROSTHESIS", "PATHOLOGY", "RADIOLOGY"]),
+        defaultAmount: z.coerce.number().min(0).default(0),
+      }).parse(req.body);
+      const item = await storage.createOtherChargeCatalogItem(input);
+      res.status(201).json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.put("/api/other-charge-catalog/:id", requireManager, async (req, res) => {
+    try {
+      const input = z.object({
+        name: z.string().min(1).optional(),
+        category: z.enum(["OTHER", "PROSTHESIS", "PATHOLOGY", "RADIOLOGY"]).optional(),
+        defaultAmount: z.coerce.number().min(0).optional(),
+      }).parse(req.body);
+      const item = await storage.updateOtherChargeCatalogItem(Number(req.params.id), input);
+      res.json(item);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete("/api/other-charge-catalog/:id", requireManager, async (req, res) => {
+    await storage.deleteOtherChargeCatalogItem(Number(req.params.id));
+    res.sendStatus(204);
+  });
+
   app.post(api.procedures.create.path, async (req, res) => {
     try {
       const input = api.procedures.create.input.parse(req.body);
@@ -755,56 +799,19 @@ export async function registerRoutes(
   app.get(api.dashboard.overview.path, async (req, res) => {
     const patientsList = await storage.getPatients();
     const doctorsList = await storage.getDoctors();
-    const visitsList = await storage.getVisits();
-    const chargesList = await storage.getCharges();
-    const roomTypes = await storage.getRoomTypes();
 
     const totalAdmitted = patientsList.filter((p) => !p.discharged).length;
     const totalBedsOccupied = totalAdmitted;
-
-    let doctorRev = visitsList.reduce((acc, v) => acc + v.charge, 0);
-    
-    // Calculate room revenue for all patients (including currently admitted)
-    let roomRev = 0;
-    for (const patient of patientsList) {
-      const admissionDate = new Date(patient.admissionDate);
-      const dischargeDate = patient.discharged && patient.expectedDischargeDate 
-        ? new Date(patient.expectedDischargeDate) 
-        : nowIST();
-      
-      const days = Math.max(1, Math.ceil((dischargeDate.getTime() - admissionDate.getTime()) / (1000 * 3600 * 24)));
-      const roomType = roomTypes.find(rt => rt.id === patient.roomTypeId);
-      if (roomType) {
-        roomRev += roomType.dailyCharge * days;
-      }
-    }
-
-    // Add explicit room charges if any exist in charges table
-    roomRev += chargesList.filter(c => c.type === 'ROOM').reduce((acc, c) => acc + c.amount, 0);
-
-    let nursingRev = chargesList
-      .filter((c) => c.type === "NURSING")
-      .reduce((acc, c) => acc + c.amount, 0);
-    let otherRev = chargesList
-      .filter((c) => c.type === "OTHER")
-      .reduce((acc, c) => acc + c.amount, 0);
-    
-    const prescriptions = await storage.getPrescriptions();
-    let medicineRev = prescriptions.reduce((acc, p) => acc + p.totalCost, 0);
-
-    const totalRevenue = doctorRev + roomRev + nursingRev + otherRev + medicineRev;
+    const todayKey = nowIST().toISOString().slice(0, 10);
+    const totalDischargedToday = patientsList.filter((patient) => {
+      if (!patient.discharged || !patient.expectedDischargeDate) return false;
+      return new Date(patient.expectedDischargeDate).toISOString().slice(0, 10) === todayKey;
+    }).length;
 
     res.json({
       totalAdmitted,
       totalBedsOccupied,
-      totalRevenue,
-      revenueBreakdown: {
-        room: roomRev,
-        doctor: doctorRev,
-        medicine: medicineRev,
-        nursing: nursingRev,
-        other: otherRev,
-      },
+      totalDischargedToday,
       activeDoctors: doctorsList.length,
     });
   });

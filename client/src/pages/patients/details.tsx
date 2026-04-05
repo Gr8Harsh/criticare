@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft, BedDouble, UserCheck } from "lucide-react";
+import { ArrowLeft, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft, BedDouble, UserCheck } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -24,6 +24,8 @@ import { useState, useEffect } from "react";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { insertChargeSchema } from "@shared/schema";
 import { api } from "@shared/routes";
+
+type BillDisplayMode = "progressive" | "date-wise";
 
 export default function PatientDetails() {
   const params = useParams();
@@ -38,6 +40,7 @@ export default function PatientDetails() {
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [quickSwitchOpen, setQuickSwitchOpen] = useState(false);
+  const [billViewMode, setBillViewMode] = useState<BillDisplayMode>("progressive");
 
   const switchForm = useForm({
     defaultValues: { toRoomTypeId: "", isHalfDay: "true", visitDistribution: "old_new", notes: "" },
@@ -88,10 +91,6 @@ export default function PatientDetails() {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4 no-print">
@@ -129,9 +128,6 @@ export default function PatientDetails() {
                     </Button>
                   </>
                 )}
-                <Button onClick={handlePrint} className="bg-foreground text-background hover:bg-foreground/90 hover-elevate">
-                  <Printer className="w-4 h-4 mr-2" /> Print Bill
-                </Button>
               </div>
             </div>
             
@@ -288,10 +284,10 @@ export default function PatientDetails() {
           <TabsTrigger value="visits" className="rounded-lg px-5"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
           <TabsTrigger value="medicines" className="rounded-lg px-5"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
           <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
-          <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgery</TabsTrigger>
+          <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgeries</TabsTrigger>
           <TabsTrigger value="room-charges" className="rounded-lg px-5"><BedDouble className="w-4 h-4 mr-2" /> Room Charges</TabsTrigger>
           <TabsTrigger value="room-switch" className="rounded-lg px-5"><ArrowRightLeft className="w-4 h-4 mr-2" /> Room Switch</TabsTrigger>
-          <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Extra Charges</TabsTrigger>
+          <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Other Charges</TabsTrigger>
           <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
         </TabsList>
         
@@ -303,14 +299,16 @@ export default function PatientDetails() {
           <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
           <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
           <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="bill"><BillView patient={patient} bill={bill} /></TabsContent>
+          <TabsContent value="bill">
+            <BillView
+              patient={patient}
+              bill={bill}
+              mode={billViewMode}
+              onModeChange={setBillViewMode}
+            />
+          </TabsContent>
         </div>
       </Tabs>
-
-      {/* Hidden Print Container */}
-      <div className="print-bill-container hidden">
-        <BillView patient={patient} bill={bill} printMode={true} />
-      </div>
 
       <EditPatientDialog patient={patient} open={editOpen} onOpenChange={setEditOpen} />
     </div>
@@ -326,6 +324,7 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
   const isAdmin = user?.role === 'ADMIN';
   const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
+  const [chargeType, setChargeType] = useState<"OTHER" | "PROSTHESIS" | "PATHOLOGY" | "RADIOLOGY">("OTHER");
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
   const { data: doctors } = useDoctors();
   const { data: roomTypes } = useRoomTypes();
@@ -768,9 +767,12 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
   const isAdmin = user?.role === 'ADMIN';
   const canManage = isManager || isAdmin;
   const [open, setOpen] = useState(false);
+  const [chargeType, setChargeType] = useState<"OTHER" | "PROSTHESIS" | "PATHOLOGY" | "RADIOLOGY">("OTHER");
+  const [selectedCatalogId, setSelectedCatalogId] = useState<string>("custom");
   const createCharge = useCreateCharge();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { data: otherChargeCatalog = [] } = useQuery<any[]>({ queryKey: ["/api/other-charge-catalog"] });
 
   const chargeFormSchema = z.object({ 
     description: z.string().min(1, "Description is required"),
@@ -782,16 +784,44 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
   });
 
   const onSubmit = (data: z.infer<typeof chargeFormSchema>) => {
-    createCharge.mutate({ patientId: patient.id, type: "OTHER", description: data.description, amount: data.amount }, {
+    createCharge.mutate({ patientId: patient.id, type: chargeType, description: data.description, amount: data.amount }, {
       onSuccess: () => {
         toast({ title: "Success", description: "Charge added successfully." });
         form.reset({ description: "", amount: 0 });
         setOpen(false);
+        setChargeType("OTHER");
+        setSelectedCatalogId("custom");
       },
       onError: (error: any) => {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
     });
+  };
+
+  const groupedCharges = {
+    OTHER: charges.filter((charge: any) => !["PROSTHESIS", "PATHOLOGY", "RADIOLOGY"].includes(charge.type)),
+    PROSTHESIS: charges.filter((charge: any) => charge.type === "PROSTHESIS"),
+    PATHOLOGY: charges.filter((charge: any) => charge.type === "PATHOLOGY"),
+    RADIOLOGY: charges.filter((charge: any) => charge.type === "RADIOLOGY"),
+  };
+
+  const chargeTypeLabels: Record<string, string> = {
+    OTHER: "General",
+    NURSING: "General",
+    PROSTHESIS: "Prosthesis (Implant / Stent)",
+    PATHOLOGY: "Pathology",
+    RADIOLOGY: "Radiology",
+  };
+
+  const filteredCatalog = otherChargeCatalog.filter((item: any) => item.category === chargeType);
+
+  const handleCatalogPick = (value: string) => {
+    setSelectedCatalogId(value);
+    if (value === "custom") return;
+    const selectedItem = filteredCatalog.find((item: any) => item.id.toString() === value);
+    if (!selectedItem) return;
+    form.setValue("description", selectedItem.name, { shouldValidate: true, shouldDirty: true });
+    form.setValue("amount", selectedItem.defaultAmount ?? 0, { shouldValidate: true, shouldDirty: true });
   };
 
   const handleDelete = async (id: number) => {
@@ -809,23 +839,64 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
   return (
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="font-display">Additional Charges</CardTitle>
+        <CardTitle className="font-display">Other Charges</CardTitle>
         {!patient.discharged && canManage && (
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(nextOpen) => {
+            setOpen(nextOpen);
+            if (!nextOpen) {
+              setSelectedCatalogId("custom");
+              setChargeType("OTHER");
+              form.reset({ description: "", amount: 0 });
+            }
+          }}>
             <DialogTrigger asChild>
               <Button size="sm" className="hover-elevate bg-primary hover:bg-primary/90"><Plus className="w-4 h-4 mr-2" /> Add Charge</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[400px]">
               <DialogHeader>
-                <DialogTitle className="font-display">Add Extra Charge</DialogTitle>
+                <DialogTitle className="font-display">Add Other Charge</DialogTitle>
               </DialogHeader>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <div className="space-y-2">
+                    <FormLabel>Charge Category</FormLabel>
+                    <Tabs value={chargeType} onValueChange={(value) => {
+                      setChargeType(value as typeof chargeType);
+                      setSelectedCatalogId("custom");
+                      form.reset({ description: "", amount: 0 });
+                    }}>
+                      <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+                        <TabsTrigger value="OTHER">General</TabsTrigger>
+                        <TabsTrigger value="PROSTHESIS">Prosthesis</TabsTrigger>
+                        <TabsTrigger value="PATHOLOGY">Pathology</TabsTrigger>
+                        <TabsTrigger value="RADIOLOGY">Radiology</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  </div>
+                  <div className="space-y-2">
+                    <FormLabel>Saved Options</FormLabel>
+                    <Select value={selectedCatalogId} onValueChange={handleCatalogPick}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pick a saved charge or keep custom" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="custom">Custom entry</SelectItem>
+                        {filteredCatalog.map((item: any) => (
+                          <SelectItem key={item.id} value={item.id.toString()}>
+                            {item.name} - ₹{(item.defaultAmount ?? 0).toLocaleString()}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Choose a saved option or type your own description below.
+                    </p>
+                  </div>
                   <FormField control={form.control} name="description" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. Nursing, Physiotherapy, etc." {...field} />
+                        <Input placeholder="e.g. Consumables, Implant, Lab panel, CT scan" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -855,16 +926,27 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
         )}
       </CardHeader>
       <CardContent>
-        {charges.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">No additional charges</div>
-        ) : (
+        <Tabs defaultValue="OTHER" className="space-y-4">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+            <TabsTrigger value="OTHER">General</TabsTrigger>
+            <TabsTrigger value="PROSTHESIS">Prosthesis</TabsTrigger>
+            <TabsTrigger value="PATHOLOGY">Pathology</TabsTrigger>
+            <TabsTrigger value="RADIOLOGY">Radiology</TabsTrigger>
+          </TabsList>
+          {(["OTHER", "PROSTHESIS", "PATHOLOGY", "RADIOLOGY"] as const).map((typeKey) => {
+            const list = groupedCharges[typeKey];
+            return (
+              <TabsContent key={typeKey} value={typeKey}>
+                {list.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No {chargeTypeLabels[typeKey].toLowerCase()} charges</div>
+                ) : (
           <Table>
             <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader>
             <TableBody>
-              {charges.map((c: any) => (
+                      {list.map((c: any) => (
                 <TableRow key={c.id}>
                   <TableCell>{format(new Date(c.date), "MMM dd, yyyy")}</TableCell>
-                  <TableCell>{c.description || c.type}</TableCell>
+                  <TableCell>{c.description || chargeTypeLabels[c.type] || c.type}</TableCell>
                   <TableCell className="text-right font-medium">₹{c.amount}</TableCell>
                   <TableCell className="text-right">
                     {!patient.discharged && canManage && (
@@ -877,7 +959,11 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
               ))}
             </TableBody>
           </Table>
-        )}
+                )}
+              </TabsContent>
+            );
+          })}
+        </Tabs>
       </CardContent>
     </Card>
   );
@@ -1251,7 +1337,7 @@ function EditPatientDialog({ patient, open, onOpenChange }: { patient: any, open
 }
 
 const SURGERY_CATEGORIES = [
-  { key: "surgeryCharge",          label: "Surgery Charge",          category: "SURGERY" },
+  { key: "surgeryCharge",          label: "Features",                category: "SURGERY" },
   { key: "surgeonCharge",          label: "Surgeon Charge",          category: "SURGEON" },
   { key: "assistantSurgeonCharge", label: "Assistant Surgeon Charge", category: "ASSISTANT_SURGEON" },
   { key: "anaesthetistCharge",     label: "Anaesthetist Charge",     category: "ANAESTHETIST" },
@@ -1285,12 +1371,30 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
   const defaultCharges = { surgeryCharge: "", surgeonCharge: "", assistantSurgeonCharge: "", anaesthetistCharge: "", otCharge: "", otAssistantCharge: "" };
   const [charges, setCharges] = useState<Record<string, string>>({ ...defaultCharges });
   const [selectedDoctors, setSelectedDoctors] = useState<Record<string, string>>({});
+  const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
 
-  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); setSelectedSurgeryName(""); setSurgeryDate(format(new Date(), "yyyy-MM-dd")); };
+  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); setSelectedSurgeryName(""); setSurgeryDate(format(new Date(), "yyyy-MM-dd")); setSelectedFeatureIds([]); };
 
   const handleCatalogSelect = (categoryKey: string, catalogId: string, cat: string) => {
     const item = catalog?.find((c: any) => c.id.toString() === catalogId && c.category === cat);
     if (item) setCharges(prev => ({ ...prev, [categoryKey]: item.cost.toString() }));
+  };
+
+  const featureOptions = catalog ?? [];
+
+  const toggleFeature = (featureId: string) => {
+    const nextIds = selectedFeatureIds.includes(featureId)
+      ? selectedFeatureIds.filter((id) => id !== featureId)
+      : [...selectedFeatureIds, featureId];
+
+    setSelectedFeatureIds(nextIds);
+
+    const total = nextIds.reduce((sum, id) => {
+      const item = featureOptions.find((feature: any) => feature.id.toString() === id);
+      return sum + (item?.cost ?? 0);
+    }, 0);
+
+    setCharges((prev) => ({ ...prev, surgeryCharge: total ? total.toString() : "" }));
   };
 
   const handleDoctorSelect = async (categoryKey: string, doctorId: string) => {
@@ -1408,28 +1512,39 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                   )}
                 </div>
 
-                {/* Surgery Charge — catalog-based, no doctor */}
+                {/* Features */}
                 {(() => {
-                  const { key, label, category } = SURGERY_CATEGORIES[0];
-                  const options = catalog?.filter((c: any) => c.category === category) ?? [];
+                  const { key, label } = SURGERY_CATEGORIES[0];
                   return (
                     <div className="border border-border/50 rounded-lg p-3 space-y-2 bg-secondary/20">
                       <p className="text-sm font-semibold text-foreground">{label}</p>
+                      {featureOptions.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="grid gap-2">
+                            {featureOptions.map((feature: any) => {
+                              const selected = selectedFeatureIds.includes(feature.id.toString());
+                              return (
+                                <button
+                                  key={feature.id}
+                                  type="button"
+                                  className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-colors ${selected ? "border-primary bg-primary/10 text-primary" : "border-border/60 bg-background hover:bg-secondary/40"}`}
+                                  onClick={() => toggleFeature(feature.id.toString())}
+                                  data-testid={`toggle-feature-${feature.id}`}
+                                >
+                                  <span className="font-medium">{feature.name}</span>
+                                  <span className="text-sm">₹{feature.cost.toLocaleString()}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Selected feature charges are summed automatically.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No features added yet in Surgery Catalog.</p>
+                      )}
                       <div className="flex gap-2 items-center">
-                        <Select onValueChange={(val) => handleCatalogSelect(key, val, category)}>
-                          <SelectTrigger className="flex-1" data-testid={`select-${key}`}>
-                            <SelectValue placeholder={options.length > 0 ? "Select from catalog…" : "No catalog items"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {options.length > 0 ? options.map((c: any) => (
-                              <SelectItem key={c.id} value={c.id.toString()}>
-                                {c.name} — ₹{c.cost.toLocaleString()}
-                              </SelectItem>
-                            )) : (
-                              <SelectItem value="__none" disabled>No entries — add via Surgery Catalog</SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
                         <div className="relative w-32 shrink-0">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
                           <Input
@@ -2114,7 +2229,388 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
   );
 }
 
-function BillView({ patient, bill, printMode = false }: { patient: any, bill: any, printMode?: boolean }) {
+type BillTimelineEntry = {
+  id: string;
+  date: string;
+  title: string;
+  details?: string;
+  amount: number;
+  isDailyVisit?: boolean;
+  itemType:
+    | "room_charge"
+    | "nursing_charge"
+    | "rmo_charge"
+    | "visit"
+    | "extra_charge"
+    | "procedure"
+    | "surgery"
+    | "prosthesis"
+    | "pharmacy"
+    | "pathology"
+    | "radiology";
+};
+
+function formatMoney(amount: number) {
+  return `\u20B9${amount.toLocaleString()}`;
+}
+
+const BILL_ITEM_TYPE_ORDER: Record<BillTimelineEntry["itemType"], number> = {
+  room_charge: 1,
+  nursing_charge: 2,
+  rmo_charge: 3,
+  visit: 4,
+  extra_charge: 5,
+  procedure: 6,
+  surgery: 7,
+  prosthesis: 8,
+  pharmacy: 9,
+  pathology: 10,
+  radiology: 11,
+};
+
+function sortBillEntriesBySequence(entries: BillTimelineEntry[]) {
+  return [...entries].sort((left, right) => {
+    const typeDiff = BILL_ITEM_TYPE_ORDER[left.itemType] - BILL_ITEM_TYPE_ORDER[right.itemType];
+    if (typeDiff !== 0) return typeDiff;
+
+    const timeDiff = new Date(left.date).getTime() - new Date(right.date).getTime();
+    if (timeDiff !== 0) return timeDiff;
+
+    return left.title.localeCompare(right.title);
+  });
+}
+
+function sortBillEntriesWithinDate(entries: BillTimelineEntry[]) {
+  return [...entries].sort((left, right) => {
+    const typeDiff = BILL_ITEM_TYPE_ORDER[left.itemType] - BILL_ITEM_TYPE_ORDER[right.itemType];
+    if (typeDiff !== 0) return typeDiff;
+
+    const timeDiff = new Date(left.date).getTime() - new Date(right.date).getTime();
+    if (timeDiff !== 0) return timeDiff;
+
+    return left.title.localeCompare(right.title);
+  });
+}
+
+function splitAmountAcrossDays(total: number, days: number) {
+  if (days <= 0) return [];
+
+  const roundedTotal = Math.round(total);
+  const base = Math.floor(roundedTotal / days);
+  let remainder = roundedTotal - base * days;
+
+  return Array.from({ length: days }, () => {
+    const value = base + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder -= 1;
+    return value;
+  });
+}
+
+function getStayDates(admissionDate: string, daysAdmitted: number) {
+  const start = new Date(admissionDate);
+
+  return Array.from({ length: Math.max(1, daysAdmitted) }, (_, index) => {
+    const date = new Date(start);
+    date.setHours(9, 0, 0, 0);
+    date.setDate(date.getDate() + index);
+    return date.toISOString();
+  });
+}
+
+function buildBillTimelineEntries(
+  patient: any,
+  bill: any,
+  roomTypes: any[] | undefined,
+  doctors: any[] | undefined,
+  medicines: any[] | undefined,
+) {
+  const entries: BillTimelineEntry[] = [];
+  const roomTypeMap = new Map((roomTypes ?? []).map((room) => [room.id, room]));
+  const doctorMap = new Map((doctors ?? []).map((doctor) => [doctor.id, doctor]));
+  const medicineMap = new Map((medicines ?? []).map((medicine) => [medicine.id, medicine]));
+  const stayDates = getStayDates(patient.admissionDate, bill.daysAdmitted ?? 1);
+  const currentRoom = roomTypeMap.get(patient.roomTypeId);
+
+  if ((bill.roomChargesList?.length ?? 0) > 0) {
+    for (const row of bill.roomChargesList ?? []) {
+      const room = roomTypeMap.get(row.roomTypeId) ?? currentRoom;
+      const rowDetails = room ? room.name : "Room stay";
+      const rowEntries = [
+        { key: "room", title: "Room Charge", amount: row.roomCharge ?? 0, itemType: "room_charge" as const, details: rowDetails },
+        { key: "nursing", title: "Nursing Charge", amount: row.nursingCharge ?? 0, itemType: "nursing_charge" as const, details: rowDetails },
+        { key: "rmo", title: "RMO Charge", amount: row.rmoCharge ?? 0, itemType: "rmo_charge" as const, details: rowDetails },
+        { key: "visit", title: "Visit", amount: row.visitCharge ?? 0, itemType: "visit" as const, details: rowDetails, isDailyVisit: true },
+      ];
+
+      for (const entry of rowEntries) {
+        if (entry.amount > 0) {
+          entries.push({
+            id: `room-row-${row.id}-${entry.key}`,
+            date: row.date,
+            title: entry.title,
+            details: entry.details,
+            amount: entry.amount,
+            isDailyVisit: entry.isDailyVisit,
+            itemType: entry.itemType,
+          });
+        }
+      }
+    }
+  } else {
+    const syntheticCharges = [
+      { key: "room", title: "Room Charge", total: bill.roomCharge ?? 0, itemType: "room_charge" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge" },
+      { key: "nursing", title: "Nursing Charge", total: bill.roomNursingCharges ?? 0, itemType: "nursing_charge" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge" },
+      { key: "rmo", title: "RMO Charge", total: bill.rmoCharges ?? 0, itemType: "rmo_charge" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge" },
+      { key: "visit", title: "Visit", total: bill.visitCharges ?? 0, itemType: "visit" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge", isDailyVisit: true },
+    ];
+
+    for (const charge of syntheticCharges) {
+      const amounts = splitAmountAcrossDays(charge.total, stayDates.length);
+
+      amounts.forEach((amount, index) => {
+        if (amount > 0) {
+          entries.push({
+            id: `synthetic-${charge.key}-${index}`,
+            date: stayDates[index],
+            title: charge.title,
+            details: charge.details,
+            amount,
+            isDailyVisit: charge.isDailyVisit,
+            itemType: charge.itemType,
+          });
+        }
+      });
+    }
+  }
+
+  for (const visit of bill.visits ?? []) {
+    const doctor = doctorMap.get(visit.doctorId);
+    entries.push({
+      id: `visit-${visit.id}`,
+      date: visit.date,
+      title: "Visit",
+      details: doctor ? `Dr. ${doctor.name}` : `Doctor #${visit.doctorId}`,
+      amount: visit.charge ?? 0,
+      itemType: "visit",
+    });
+  }
+
+  for (const prescription of bill.prescriptions ?? []) {
+    const medicine = medicineMap.get(prescription.medicineId);
+    entries.push({
+      id: `prescription-${prescription.id}`,
+      date: prescription.date,
+      title: "Pharmacy / Medicine",
+      details: medicine
+        ? `${medicine.name} x${prescription.quantity}`
+        : `Medicine #${prescription.medicineId} x${prescription.quantity}`,
+      amount: prescription.totalCost ?? 0,
+      itemType: "pharmacy",
+    });
+  }
+
+  for (const charge of bill.charges ?? []) {
+    const chargeItemType: BillTimelineEntry["itemType"] =
+      charge.type === "PROSTHESIS"
+        ? "prosthesis"
+        : charge.type === "PATHOLOGY"
+          ? "pathology"
+          : charge.type === "RADIOLOGY"
+            ? "radiology"
+            : "extra_charge";
+
+    const chargeTitle =
+      charge.type === "PROSTHESIS"
+        ? "Prosthesis (Implant / Stent)"
+        : charge.type === "PATHOLOGY"
+          ? "Pathology"
+            : charge.type === "RADIOLOGY"
+              ? "Radiology"
+            : charge.type === "NURSING"
+              ? "Extra Charge"
+              : "Extra Charge";
+
+    entries.push({
+      id: `charge-${charge.id}`,
+      date: charge.date,
+      title: chargeTitle,
+      details: charge.description || undefined,
+      amount: charge.amount ?? 0,
+      itemType: chargeItemType,
+    });
+  }
+
+  for (const procedure of bill.procedures ?? []) {
+    const doctor = procedure.doctorId ? doctorMap.get(procedure.doctorId) : undefined;
+    entries.push({
+      id: `procedure-${procedure.id}`,
+      date: procedure.date,
+      title: "Procedure",
+      details: [procedure.name, procedure.description, doctor ? `Dr. ${doctor.name}` : undefined]
+        .filter(Boolean)
+        .join(" | "),
+      amount: procedure.cost ?? 0,
+      itemType: "procedure",
+    });
+  }
+
+  for (const surgery of bill.surgeries ?? []) {
+    const surgeryTotal =
+      (surgery.surgeryCharge ?? 0) +
+      (surgery.surgeonCharge ?? 0) +
+      (surgery.assistantSurgeonCharge ?? 0) +
+      (surgery.anaesthetistCharge ?? 0) +
+      (surgery.otCharge ?? 0) +
+      (surgery.otAssistantCharge ?? 0);
+
+    const breakdown = [
+      surgery.surgeryCharge ? `Features ${formatMoney(surgery.surgeryCharge)}` : null,
+      surgery.surgeonCharge ? `Surgeon ${formatMoney(surgery.surgeonCharge)}` : null,
+      surgery.assistantSurgeonCharge ? `Assistant ${formatMoney(surgery.assistantSurgeonCharge)}` : null,
+      surgery.anaesthetistCharge ? `Anaesthetist ${formatMoney(surgery.anaesthetistCharge)}` : null,
+      surgery.otCharge ? `OT ${formatMoney(surgery.otCharge)}` : null,
+      surgery.otAssistantCharge ? `OT Assistant ${formatMoney(surgery.otAssistantCharge)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+    entries.push({
+      id: `surgery-${surgery.id}`,
+      date: surgery.date,
+      title: "Surgery",
+      details: [surgery.surgeryName, breakdown].filter(Boolean).join(" | "),
+      amount: surgeryTotal,
+      itemType: "surgery",
+    });
+  }
+
+  return entries;
+}
+
+function ProgressiveBillTable({ entries }: { entries: BillTimelineEntry[] }) {
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-8">No bill line items available yet.</p>;
+  }
+
+  const orderedEntries = sortBillEntriesBySequence(entries);
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-[150px]">Date</TableHead>
+          <TableHead className="w-[220px]">Item</TableHead>
+          <TableHead>Details</TableHead>
+          <TableHead className="text-right">Amount</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {orderedEntries.map((entry) => (
+          <TableRow key={entry.id}>
+            <TableCell>{format(new Date(entry.date), "MMM dd, yyyy")}</TableCell>
+            <TableCell className="font-medium">
+              <span className="inline-flex items-center gap-2">
+                <span>{entry.title}</span>
+                {entry.isDailyVisit ? <UserCheck className="h-3.5 w-3.5 text-primary" /> : null}
+              </span>
+            </TableCell>
+            <TableCell className="text-muted-foreground">{entry.details || "—"}</TableCell>
+            <TableCell className="text-right font-medium">{formatMoney(entry.amount)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function DateWiseBillGroups({ entries }: { entries: BillTimelineEntry[] }) {
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-8">No bill line items available yet.</p>;
+  }
+
+  const groupedEntries = entries.reduce<Array<{ dateKey: string; entries: BillTimelineEntry[] }>>((groups, entry) => {
+    const dateKey = format(new Date(entry.date), "yyyy-MM-dd");
+    const existingGroup = groups.find((group) => group.dateKey === dateKey);
+
+    if (existingGroup) {
+      existingGroup.entries.push(entry);
+      return groups;
+    }
+
+    groups.push({ dateKey, entries: [entry] });
+    return groups;
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      {groupedEntries.map((group) => {
+        const orderedEntries = sortBillEntriesWithinDate(group.entries);
+        const dayTotal = orderedEntries.reduce((sum, entry) => sum + entry.amount, 0);
+
+        return (
+          <div key={group.dateKey} className="overflow-hidden rounded-2xl border border-border/50">
+            <div className="flex items-center justify-between bg-secondary/30 px-5 py-4">
+              <div>
+                <h4 className="font-display text-lg font-semibold">
+                  {format(new Date(group.entries[0].date), "MMM dd, yyyy")}
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  {group.entries.length} item{group.entries.length !== 1 ? "s" : ""}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Day Total</p>
+                <p className="font-semibold text-primary">{formatMoney(dayTotal)}</p>
+              </div>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[220px]">Item</TableHead>
+                  <TableHead>Details</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orderedEntries.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell className="font-medium">
+                      <span className="inline-flex items-center gap-2">
+                        <span>{entry.title}</span>
+                        {entry.isDailyVisit ? <UserCheck className="h-3.5 w-3.5 text-primary" /> : null}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{entry.details || "—"}</TableCell>
+                    <TableCell className="text-right font-medium">{formatMoney(entry.amount)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BillView({
+  patient,
+  bill,
+  mode,
+  onModeChange,
+  printMode = false,
+}: {
+  patient: any,
+  bill: any,
+  mode: BillDisplayMode,
+  onModeChange: (mode: BillDisplayMode) => void,
+  printMode?: boolean
+}) {
+  const { data: doctors } = useDoctors();
+  const { data: medicines } = useMedicines();
+  const { data: roomTypes } = useRoomTypes();
+  const entries = buildBillTimelineEntries(patient, bill, roomTypes, doctors, medicines);
+
   return (
     <Card className={`border-border/50 shadow-md ${printMode ? 'border-none shadow-none' : ''}`}>
       <CardHeader className="text-center border-b pb-6 mb-4">
@@ -2135,6 +2631,7 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
           </div>
         </div>
 
+        {false && (
         <div className="border-t border-border/50 pt-6">
           <h3 className="font-display font-semibold text-lg mb-4">Charges Summary</h3>
           <Table>
@@ -2212,6 +2709,47 @@ function BillView({ patient, bill, printMode = false }: { patient: any, bill: an
               </TableRow>
             </TableBody>
           </Table>
+        </div>
+        )}
+
+        <div className="border-t border-border/50 pt-6">
+          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-display font-semibold text-lg">
+                {mode === "progressive" ? "Progressive Bill" : "Date-wise Bill"}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {mode === "progressive"
+                  ? "Every bill item in one running list with its date."
+                  : "Each date followed by all billable activity recorded on that day."}
+              </p>
+            </div>
+
+            {!printMode && (
+              <Tabs value={mode} onValueChange={(value) => onModeChange(value as BillDisplayMode)}>
+                <TabsList className="grid w-full grid-cols-2 sm:w-[320px]">
+                  <TabsTrigger value="progressive">Progressive Bill</TabsTrigger>
+                  <TabsTrigger value="date-wise">Date-wise Bill</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+          </div>
+
+          {mode === "progressive" ? (
+            <ProgressiveBillTable entries={entries} />
+          ) : (
+            <DateWiseBillGroups entries={entries} />
+          )}
+
+          <div className="mt-6 flex items-center justify-between rounded-2xl border border-border/60 bg-secondary/20 px-5 py-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Grand Total</p>
+              <p className="text-sm text-muted-foreground">
+                {bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""} admitted
+              </p>
+            </div>
+            <p className="text-2xl font-bold text-primary">{formatMoney(bill.grandTotal)}</p>
+          </div>
         </div>
         
         {printMode && (
