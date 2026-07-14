@@ -8,6 +8,16 @@ import path from "path";
 const viteLogger = createLogger();
 
 export async function setupVite(server: Server, app: Express) {
+  const resolvedViteConfig =
+    typeof viteConfig === "function"
+      ? await viteConfig({
+          command: "serve",
+          mode: process.env.NODE_ENV ?? "development",
+          isSsrBuild: false,
+          isPreview: false,
+        })
+      : viteConfig;
+
   const serverOptions = {
     middlewareMode: true,
     hmr: { server, path: "/vite-hmr" },
@@ -15,8 +25,12 @@ export async function setupVite(server: Server, app: Express) {
   };
 
   const vite = await createViteServer({
-    ...viteConfig,
+    ...resolvedViteConfig,
     configFile: false,
+    server: {
+      ...(resolvedViteConfig.server ?? {}),
+      ...serverOptions,
+    },
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
@@ -24,7 +38,6 @@ export async function setupVite(server: Server, app: Express) {
         process.exit(1);
       },
     },
-    server: serverOptions,
     appType: "custom",
   });
 
