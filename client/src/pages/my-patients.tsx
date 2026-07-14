@@ -26,7 +26,7 @@ export default function MyPatientsPage() {
   const filtered = (patients ?? []).filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.ipdNumber.toLowerCase().includes(search.toLowerCase()) ||
+      (p.ipdNumber ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (p.illness ?? "").toLowerCase().includes(search.toLowerCase())
   );
 

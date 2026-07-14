@@ -1,12 +1,12 @@
 import { defineConfig } from "vite";
-import type { Plugin } from "vite";
+import type { PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { previewLocalApiPlugin } from "./script/preview-local-api";
 
 export default defineConfig(async ({ mode }) => {
-  const plugins: Plugin[] = [
+  const plugins: PluginOption[] = [
     react(),
     runtimeErrorOverlay(),
   ];
@@ -43,6 +43,7 @@ export default defineConfig(async ({ mode }) => {
       emptyOutDir: true,
     },
     server: {
+      allowedHosts: [".trycloudflare.com"],
       fs: {
         strict: true,
         deny: ["**/.*"],

@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { 
-  insertUserSchema, insertRoomTypeSchema, insertPatientSchema, 
+  insertUserSchema, insertRoomTypeSchema, insertRoomNumberSchema, insertPatientSchema, 
   insertDoctorSchema, insertPatientDoctorSchema, insertMedicineSchema, 
   insertVisitSchema, insertPrescriptionSchema, insertChargeSchema, insertProcedureSchema,
   insertRoomSwitchSchema,
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, roomSwitches
+  users, roomTypes, roomNumbers, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, procedures, roomSwitches
 } from './schema';
 
 export const errorSchemas = {
@@ -95,7 +95,13 @@ export const api = {
           roomCharge: z.number(),
           roomNursingCharges: z.number().optional(),
           rmoCharges: z.number().optional(),
+          incentiviseCharges: z.number().optional(),
+          monitorCharges: z.number().optional(),
           visitCharges: z.number().optional(),
+          registrationCharge: z.number().optional(),
+          discountAmount: z.number().optional(),
+          discountType: z.string().nullable().optional(),
+          packageAmount: z.number().optional(),
           doctorCharges: z.number(),
           medicineCharges: z.number(),
           nursingCharges: z.number(),
@@ -103,6 +109,8 @@ export const api = {
           procedureCharges: z.number(),
           surgeryCharges: z.number(),
           grandTotal: z.number(),
+          advanceAmount: z.number(),
+          finalAmount: z.number(),
           visits: z.array(z.any()),
           prescriptions: z.array(z.any()),
           charges: z.array(z.any()),
@@ -119,7 +127,14 @@ export const api = {
       method: 'POST' as const,
       path: '/api/patients' as const,
       input: insertPatientSchema.extend({
-        roomTypeId: z.coerce.number()
+        admissionDate: z.coerce.date().optional(),
+        roomTypeId: z.coerce.number(),
+        advanceAmount: z.coerce.number().default(0),
+        discountAmount: z.coerce.number().default(0),
+        discountType: z.enum(["SELF", "TRUST"]).optional().nullable(),
+        packageAmount: z.coerce.number().default(0),
+        registrationCharge: z.coerce.number().default(400),
+        halfDayDischarge: z.boolean().default(false),
       }),
       responses: {
         201: z.custom<typeof patients.$inferSelect>(),
@@ -129,7 +144,16 @@ export const api = {
     update: {
       method: 'PUT' as const,
       path: '/api/patients/:id' as const,
-      input: insertPatientSchema.partial(),
+      input: insertPatientSchema.extend({
+        admissionDate: z.coerce.date().optional(),
+        roomTypeId: z.coerce.number(),
+        advanceAmount: z.coerce.number().default(0),
+        discountAmount: z.coerce.number().default(0),
+        discountType: z.enum(["SELF", "TRUST"]).optional().nullable(),
+        packageAmount: z.coerce.number().default(0),
+        registrationCharge: z.coerce.number().default(400),
+        halfDayDischarge: z.boolean().default(false),
+      }).partial(),
       responses: {
         200: z.custom<typeof patients.$inferSelect>(),
         400: errorSchemas.validation,
@@ -238,9 +262,33 @@ export const api = {
         dailyCharge: z.coerce.number(),
         nursingCharge: z.coerce.number().default(0),
         rmoCharge: z.coerce.number().default(0),
+        incentiviseCharge: z.coerce.number().default(0),
+        monitorCharge: z.coerce.number().default(0),
+        visitCharge: z.coerce.number().default(0),
       }),
       responses: {
         201: z.custom<typeof roomTypes.$inferSelect>(),
+      }
+    }
+  },
+  roomNumbers: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/room-numbers' as const,
+      responses: {
+        200: z.array(z.custom<typeof roomNumbers.$inferSelect>()),
+      }
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/room-numbers' as const,
+      input: insertRoomNumberSchema.extend({
+        roomTypeId: z.coerce.number(),
+        number: z.string().min(1),
+      }),
+      responses: {
+        201: z.custom<typeof roomNumbers.$inferSelect>(),
+        400: errorSchemas.validation,
       }
     }
   },
@@ -255,7 +303,12 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/visits' as const,
-      input: insertVisitSchema.extend({ patientId: z.coerce.number(), doctorId: z.coerce.number(), charge: z.coerce.number() }),
+      input: insertVisitSchema.extend({
+        patientId: z.coerce.number(),
+        doctorId: z.coerce.number(),
+        charge: z.coerce.number(),
+        date: z.string().optional(),
+      }),
       responses: {
         201: z.custom<typeof visits.$inferSelect>(),
       }

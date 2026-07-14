@@ -21,6 +21,12 @@ type DemoRoomType = {
   visitCharge: number;
 };
 
+type DemoRoomNumber = {
+  id: number;
+  roomTypeId: number;
+  number: string;
+};
+
 type DemoDoctor = {
   id: number;
   name: string;
@@ -46,6 +52,7 @@ type DemoPatient = {
   expectedDischargeDate: string | null;
   roomTypeId: number;
   bedNumber: string;
+  advanceAmount: number;
   discharged: boolean;
   createdAt: string;
   assignedDoctorIds: number[];
@@ -88,6 +95,14 @@ const demoRoomTypes: DemoRoomType[] = [
   { id: 2, name: "Semi-Private Room", dailyCharge: 1200, nursingCharge: 240, rmoCharge: 240, visitCharge: 480 },
   { id: 3, name: "Private Room", dailyCharge: 2500, nursingCharge: 500, rmoCharge: 500, visitCharge: 1000 },
   { id: 4, name: "ICU", dailyCharge: 5000, nursingCharge: 1000, rmoCharge: 1000, visitCharge: 2000 },
+];
+
+const demoRoomNumbers: DemoRoomNumber[] = [
+  { id: 1, roomTypeId: 1, number: "GW-01" },
+  { id: 2, roomTypeId: 1, number: "GW-02" },
+  { id: 3, roomTypeId: 2, number: "SP-07" },
+  { id: 4, roomTypeId: 3, number: "P-12" },
+  { id: 5, roomTypeId: 4, number: "ICU-04" },
 ];
 
 const demoDoctors: DemoDoctor[] = [
@@ -140,6 +155,7 @@ const demoPatients: DemoPatient[] = [
     expectedDischargeDate: null,
     roomTypeId: 3,
     bedNumber: "P-12",
+    advanceAmount: 5000,
     discharged: false,
     createdAt: "2026-04-02T10:00:00.000Z",
     assignedDoctorIds: [1, 3],
@@ -157,6 +173,7 @@ const demoPatients: DemoPatient[] = [
     expectedDischargeDate: null,
     roomTypeId: 4,
     bedNumber: "ICU-04",
+    advanceAmount: 2500,
     discharged: false,
     createdAt: "2026-04-03T06:30:00.000Z",
     assignedDoctorIds: [2],
@@ -174,6 +191,7 @@ const demoPatients: DemoPatient[] = [
     expectedDischargeDate: "2026-04-05T09:00:00.000Z",
     roomTypeId: 2,
     bedNumber: "SP-07",
+    advanceAmount: 1000,
     discharged: true,
     createdAt: "2026-04-01T08:15:00.000Z",
     assignedDoctorIds: [1],
@@ -407,6 +425,18 @@ function getPatientBill(patientId: number) {
       surgery.otAssistantCharge,
     0,
   );
+  const grandTotal =
+    roomCharge +
+    roomNursingCharges +
+    rmoCharges +
+    visitCharges +
+    doctorCharges +
+    medicineCharges +
+    nursingCharges +
+    otherCharges +
+    procedureCharges +
+    surgeryCharges;
+  const advanceAmount = patient.advanceAmount ?? 0;
 
   return {
     daysAdmitted,
@@ -420,17 +450,9 @@ function getPatientBill(patientId: number) {
     otherCharges,
     procedureCharges,
     surgeryCharges,
-    grandTotal:
-      roomCharge +
-      roomNursingCharges +
-      rmoCharges +
-      visitCharges +
-      doctorCharges +
-      medicineCharges +
-      nursingCharges +
-      otherCharges +
-      procedureCharges +
-      surgeryCharges,
+    grandTotal,
+    advanceAmount,
+    finalAmount: Math.max(0, grandTotal - advanceAmount),
     visits,
     prescriptions,
     charges,
@@ -543,6 +565,7 @@ function createPreviewMiddleware(): Connect.NextHandleFunction {
         expectedDischargeDate: null,
         roomTypeId: Number(payload.roomTypeId ?? 1),
         bedNumber: payload.bedNumber ?? `B-${nextId}`,
+        advanceAmount: Number(payload.advanceAmount ?? 0),
         discharged: false,
         createdAt: currentTimestamp(),
         assignedDoctorIds: payload.assignedDoctorIds ?? [],
@@ -557,6 +580,22 @@ function createPreviewMiddleware(): Connect.NextHandleFunction {
       if (!patient) {
         return sendJson(res, 404, { message: "Patient not found" });
       }
+      return sendJson(res, 200, patient);
+    }
+
+    if (req.method === "PUT" && /^\/api\/patients\/\d+$/.test(pathname)) {
+      const patientId = Number(pathname.split("/").at(-1));
+      const patient = demoPatients.find((entry) => entry.id === patientId);
+      if (!patient) {
+        return sendJson(res, 404, { message: "Patient not found" });
+      }
+
+      const payload = JSON.parse((await readBody(req)) || "{}") as Partial<DemoPatient>;
+      Object.assign(patient, {
+        ...payload,
+        roomTypeId: payload.roomTypeId !== undefined ? Number(payload.roomTypeId) : patient.roomTypeId,
+        advanceAmount: payload.advanceAmount !== undefined ? Number(payload.advanceAmount) : patient.advanceAmount,
+      });
       return sendJson(res, 200, patient);
     }
 
@@ -607,7 +646,7 @@ function createPreviewMiddleware(): Connect.NextHandleFunction {
       const item = {
         id: nextId,
         name: payload.name ?? "New Procedure",
-        description: payload.description ?? null,
+        description: payload.description ?? "",
         cost: Number(payload.cost ?? 0),
       };
       demoProcedureCatalog.unshift(item);
@@ -620,7 +659,7 @@ function createPreviewMiddleware(): Connect.NextHandleFunction {
       const item = demoProcedureCatalog.find((entry) => entry.id === id);
       if (!item) return sendJson(res, 404, { message: "Procedure not found" });
       if (payload.name !== undefined) item.name = payload.name;
-      if (payload.description !== undefined) item.description = payload.description;
+      if (payload.description !== undefined) item.description = payload.description ?? "";
       if (payload.cost !== undefined) item.cost = Number(payload.cost);
       return sendJson(res, 200, item);
     }
@@ -767,6 +806,49 @@ function createPreviewMiddleware(): Connect.NextHandleFunction {
       };
       demoRoomTypes.unshift(roomType);
       return sendJson(res, 201, roomType);
+    }
+
+    if (req.method === "GET" && pathname === "/api/room-numbers") {
+      return sendJson(res, 200, demoRoomNumbers);
+    }
+
+    if (req.method === "POST" && pathname === "/api/room-numbers") {
+      const payload = JSON.parse((await readBody(req)) || "{}") as Partial<DemoRoomNumber>;
+      const roomTypeId = Number(payload.roomTypeId ?? 0);
+      const number = payload.number?.trim() ?? "";
+
+      if (sessionUser.role !== "ADMIN" && sessionUser.role !== "MANAGER") {
+        return sendJson(res, 403, { message: "Manager access required" });
+      }
+
+      if (!roomTypeId || !number) {
+        return sendJson(res, 400, { message: "Room type and room number are required" });
+      }
+
+      const duplicate = demoRoomNumbers.find(
+        (room) => room.roomTypeId === roomTypeId && room.number.toLowerCase() === number.toLowerCase(),
+      );
+      if (duplicate) {
+        return sendJson(res, 400, { message: "Room number already exists for this room type" });
+      }
+
+      const nextId = Math.max(0, ...demoRoomNumbers.map((room) => room.id)) + 1;
+      const roomNumber: DemoRoomNumber = { id: nextId, roomTypeId, number };
+      demoRoomNumbers.unshift(roomNumber);
+      return sendJson(res, 201, roomNumber);
+    }
+
+    if (req.method === "DELETE" && /^\/api\/room-numbers\/\d+$/.test(pathname)) {
+      if (sessionUser.role !== "ADMIN" && sessionUser.role !== "MANAGER") {
+        return sendJson(res, 403, { message: "Manager access required" });
+      }
+
+      const id = Number(pathname.split("/").at(-1));
+      const index = demoRoomNumbers.findIndex((room) => room.id === id);
+      if (index >= 0) demoRoomNumbers.splice(index, 1);
+      res.statusCode = 204;
+      res.end();
+      return;
     }
 
     if (req.method === "GET" && pathname === "/api/admin/users") {

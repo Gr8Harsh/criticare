@@ -20,12 +20,12 @@ export function AppSidebar() {
     { title: "Dashboard", url: "/", icon: LayoutDashboard, show: true },
     { title: "My Patients", url: "/my-patients", icon: ClipboardList, show: isDoctor },
     { title: "Patients", url: "/patients", icon: Users, show: isManager || isDoctor },
-    { title: "Doctors", url: "/doctors", icon: UserRound, show: isManager },
+    { title: "Doctors", url: "/doctors", icon: UserRound, show: isManager || isDoctor },
     { title: "Medicines", url: "/medicines", icon: Pill, show: isManager },
     { title: "Procedures", url: "/procedures", icon: Stethoscope, show: isManager },
     { title: "Surgeries", url: "/surgeries", icon: Scissors, show: isManager },
     { title: "Other Charges", url: "/other-charges", icon: CreditCard, show: isManager },
-    { title: "Room Charges", url: "/charge-rates", icon: IndianRupee, show: isManager },
+    { title: "Room Configuration", url: "/charge-rates", icon: IndianRupee, show: isManager },
   ];
 
   return (
@@ -39,7 +39,7 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
       
-      <SidebarContent className="p-4">
+      <SidebarContent className="relative flex flex-col p-4 pb-28">
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
             Main Menu
@@ -64,7 +64,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <div className="mt-auto pt-8">
+        <div className="absolute bottom-4 left-4 right-4">
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -80,6 +80,17 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+          <p className="mt-2 pr-1 text-right text-[11px] font-medium text-muted-foreground/70">
+            ~Made By{" "}
+            <a
+              href="https://www.linkedin.com/in/harshpasari/"
+              target="_blank"
+              rel="noreferrer"
+              className="underline-offset-2 hover:text-primary hover:underline"
+            >
+              Harsh Pasari
+            </a>
+          </p>
         </div>
       </SidebarContent>
     </Sidebar>

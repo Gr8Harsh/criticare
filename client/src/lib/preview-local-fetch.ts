@@ -17,6 +17,12 @@ type DemoRoomType = {
   visitCharge: number;
 };
 
+type DemoRoomNumber = {
+  id: number;
+  roomTypeId: number;
+  number: string;
+};
+
 type DemoDoctor = {
   id: number;
   name: string;
@@ -42,6 +48,7 @@ type DemoPatient = {
   expectedDischargeDate: string | null;
   roomTypeId: number;
   bedNumber: string;
+  advanceAmount: number;
   discharged: boolean;
   createdAt: string;
   assignedDoctorIds: number[];
@@ -84,6 +91,14 @@ const demoRoomTypes: DemoRoomType[] = [
   { id: 2, name: "Semi-Private Room", dailyCharge: 1200, nursingCharge: 240, rmoCharge: 240, visitCharge: 480 },
   { id: 3, name: "Private Room", dailyCharge: 2500, nursingCharge: 500, rmoCharge: 500, visitCharge: 1000 },
   { id: 4, name: "ICU", dailyCharge: 5000, nursingCharge: 1000, rmoCharge: 1000, visitCharge: 2000 },
+];
+
+const demoRoomNumbers: DemoRoomNumber[] = [
+  { id: 1, roomTypeId: 1, number: "GW-01" },
+  { id: 2, roomTypeId: 1, number: "GW-02" },
+  { id: 3, roomTypeId: 2, number: "SP-07" },
+  { id: 4, roomTypeId: 3, number: "P-12" },
+  { id: 5, roomTypeId: 4, number: "ICU-04" },
 ];
 
 const demoDoctors: DemoDoctor[] = [
@@ -136,6 +151,7 @@ const demoPatients: DemoPatient[] = [
     expectedDischargeDate: null,
     roomTypeId: 3,
     bedNumber: "P-12",
+    advanceAmount: 5000,
     discharged: false,
     createdAt: "2026-04-02T10:00:00.000Z",
     assignedDoctorIds: [1, 3],
@@ -153,6 +169,7 @@ const demoPatients: DemoPatient[] = [
     expectedDischargeDate: null,
     roomTypeId: 4,
     bedNumber: "ICU-04",
+    advanceAmount: 2500,
     discharged: false,
     createdAt: "2026-04-03T06:30:00.000Z",
     assignedDoctorIds: [2],
@@ -170,6 +187,7 @@ const demoPatients: DemoPatient[] = [
     expectedDischargeDate: "2026-04-05T09:00:00.000Z",
     roomTypeId: 2,
     bedNumber: "SP-07",
+    advanceAmount: 1000,
     discharged: true,
     createdAt: "2026-04-01T08:15:00.000Z",
     assignedDoctorIds: [1],
@@ -265,7 +283,7 @@ const demoSurgeryCatalog = [
 
 const demoOtherChargeCatalog = [
   { id: 1, name: "Dressing materials", category: "OTHER", defaultAmount: 350 },
-  { id: 2, name: "Stent", category: "PROSTHESIS", defaultAmount: 18000 },
+  { id: 2, name: "Stent", category: "PROSTHESIS", defaultAmount: 0 },
   { id: 3, name: "CBC", category: "PATHOLOGY", defaultAmount: 450 },
   { id: 4, name: "CT Scan", category: "RADIOLOGY", defaultAmount: 2200 },
 ];
@@ -349,7 +367,7 @@ function getPatientBill(patientId: number) {
     .filter((charge) => charge.type === "NURSING")
     .reduce((sum, charge) => sum + charge.amount, 0);
   const otherCharges = charges
-    .filter((charge) => charge.type === "OTHER")
+    .filter((charge) => charge.type !== "NURSING")
     .reduce((sum, charge) => sum + charge.amount, 0);
   const procedureCharges = procedures.reduce((sum, procedure) => sum + procedure.cost, 0);
   const surgeryCharges = surgeries.reduce(
@@ -363,6 +381,18 @@ function getPatientBill(patientId: number) {
       surgery.otAssistantCharge,
     0,
   );
+  const grandTotal =
+    roomCharge +
+    roomNursingCharges +
+    rmoCharges +
+    visitCharges +
+    doctorCharges +
+    medicineCharges +
+    nursingCharges +
+    otherCharges +
+    procedureCharges +
+    surgeryCharges;
+  const advanceAmount = patient.advanceAmount ?? 0;
 
   return {
     daysAdmitted,
@@ -376,17 +406,9 @@ function getPatientBill(patientId: number) {
     otherCharges,
     procedureCharges,
     surgeryCharges,
-    grandTotal:
-      roomCharge +
-      roomNursingCharges +
-      rmoCharges +
-      visitCharges +
-      doctorCharges +
-      medicineCharges +
-      nursingCharges +
-      otherCharges +
-      procedureCharges +
-      surgeryCharges,
+    grandTotal,
+    advanceAmount,
+    finalAmount: grandTotal - advanceAmount,
     visits,
     prescriptions,
     charges,
@@ -501,6 +523,7 @@ async function handlePreviewApi(input: RequestInfo | URL, init?: RequestInit) {
       expectedDischargeDate: null,
       roomTypeId: Number(payload.roomTypeId ?? 1),
       bedNumber: payload.bedNumber ?? `B-${nextId}`,
+      advanceAmount: Number(payload.advanceAmount ?? 0),
       discharged: false,
       createdAt: nowIso(),
       assignedDoctorIds: payload.assignedDoctorIds ?? [],
@@ -515,6 +538,20 @@ async function handlePreviewApi(input: RequestInfo | URL, init?: RequestInit) {
     return patient
       ? jsonResponse(200, patient)
       : jsonResponse(404, { message: "Patient not found" });
+  }
+
+  if (method === "PUT" && /^\/api\/patients\/\d+$/.test(pathname)) {
+    const patientId = Number(pathname.split("/").at(-1));
+    const patient = demoPatients.find((entry) => entry.id === patientId);
+    if (!patient) return jsonResponse(404, { message: "Patient not found" });
+
+    const payload = (await readJsonBody(input, init)) as Partial<DemoPatient>;
+    Object.assign(patient, {
+      ...payload,
+      roomTypeId: payload.roomTypeId !== undefined ? Number(payload.roomTypeId) : patient.roomTypeId,
+      advanceAmount: payload.advanceAmount !== undefined ? Number(payload.advanceAmount) : patient.advanceAmount,
+    });
+    return jsonResponse(200, patient);
   }
 
   if (method === "GET" && pathname === "/api/doctors") {
@@ -549,7 +586,7 @@ async function handlePreviewApi(input: RequestInfo | URL, init?: RequestInit) {
     const item = {
       id: nextId,
       name: payload.name ?? "New Procedure",
-      description: payload.description ?? null,
+      description: payload.description ?? "",
       cost: Number(payload.cost ?? 0),
     };
     demoProcedureCatalog.unshift(item);
@@ -562,7 +599,7 @@ async function handlePreviewApi(input: RequestInfo | URL, init?: RequestInit) {
     const item = demoProcedureCatalog.find((entry) => entry.id === id);
     if (!item) return jsonResponse(404, { message: "Procedure not found" });
     if (payload.name !== undefined) item.name = payload.name;
-    if (payload.description !== undefined) item.description = payload.description;
+    if (payload.description !== undefined) item.description = payload.description ?? "";
     if (payload.cost !== undefined) item.cost = Number(payload.cost);
     return jsonResponse(200, item);
   }
@@ -648,7 +685,7 @@ async function handlePreviewApi(input: RequestInfo | URL, init?: RequestInit) {
       id: nextId,
       name: payload.name ?? "New Charge",
       category: payload.category ?? "OTHER",
-      defaultAmount: Number(payload.defaultAmount ?? 0),
+      defaultAmount: payload.category === "PROSTHESIS" ? 0 : Number(payload.defaultAmount ?? 0),
     };
     demoOtherChargeCatalog.unshift(item);
     return jsonResponse(201, item);
@@ -662,6 +699,7 @@ async function handlePreviewApi(input: RequestInfo | URL, init?: RequestInit) {
     if (payload.name !== undefined) item.name = payload.name;
     if (payload.category !== undefined) item.category = payload.category;
     if (payload.defaultAmount !== undefined) item.defaultAmount = Number(payload.defaultAmount);
+    if (item.category === "PROSTHESIS") item.defaultAmount = 0;
     return jsonResponse(200, item);
   }
 
@@ -674,6 +712,62 @@ async function handlePreviewApi(input: RequestInfo | URL, init?: RequestInit) {
 
   if (method === "GET" && pathname === "/api/room-types") {
     return jsonResponse(200, demoRoomTypes);
+  }
+
+  if (method === "POST" && pathname === "/api/room-types") {
+    const payload = await readJsonBody(input, init) as Partial<DemoRoomType>;
+    const nextId = Math.max(0, ...demoRoomTypes.map((room) => room.id)) + 1;
+    const roomType: DemoRoomType = {
+      id: nextId,
+      name: payload.name ?? "New Room Type",
+      dailyCharge: Number(payload.dailyCharge ?? 0),
+      nursingCharge: Number(payload.nursingCharge ?? 0),
+      rmoCharge: Number(payload.rmoCharge ?? 0),
+      visitCharge: Number(payload.visitCharge ?? 0),
+    };
+    demoRoomTypes.unshift(roomType);
+    return jsonResponse(201, roomType);
+  }
+
+  if (method === "GET" && pathname === "/api/room-numbers") {
+    return jsonResponse(200, demoRoomNumbers);
+  }
+
+  if (method === "POST" && pathname === "/api/room-numbers") {
+    const payload = await readJsonBody(input, init) as Partial<DemoRoomNumber>;
+    const roomTypeId = Number(payload.roomTypeId ?? 0);
+    const number = payload.number?.trim() ?? "";
+
+    if (sessionUser.role !== "ADMIN" && sessionUser.role !== "MANAGER") {
+      return jsonResponse(403, { message: "Manager access required" });
+    }
+
+    if (!roomTypeId || !number) {
+      return jsonResponse(400, { message: "Room type and room number are required" });
+    }
+
+    const duplicate = demoRoomNumbers.find(
+      (room) => room.roomTypeId === roomTypeId && room.number.toLowerCase() === number.toLowerCase(),
+    );
+    if (duplicate) {
+      return jsonResponse(400, { message: "Room number already exists for this room type" });
+    }
+
+    const nextId = Math.max(0, ...demoRoomNumbers.map((room) => room.id)) + 1;
+    const roomNumber: DemoRoomNumber = { id: nextId, roomTypeId, number };
+    demoRoomNumbers.unshift(roomNumber);
+    return jsonResponse(201, roomNumber);
+  }
+
+  if (method === "DELETE" && /^\/api\/room-numbers\/\d+$/.test(pathname)) {
+    if (sessionUser.role !== "ADMIN" && sessionUser.role !== "MANAGER") {
+      return jsonResponse(403, { message: "Manager access required" });
+    }
+
+    const id = Number(pathname.split("/").at(-1));
+    const index = demoRoomNumbers.findIndex((room) => room.id === id);
+    if (index >= 0) demoRoomNumbers.splice(index, 1);
+    return jsonResponse(204, {});
   }
 
   if (method === "GET" && pathname === "/api/admin/users") {

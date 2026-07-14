@@ -40,6 +40,7 @@ function OtherChargeCatalogDialog({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const isEdit = Boolean(item);
+  const isProsthesis = category === "PROSTHESIS";
 
   const form = useForm<OtherChargeCatalogForm>({
     resolver: zodResolver(otherChargeCatalogSchema),
@@ -55,7 +56,7 @@ function OtherChargeCatalogDialog({
       const res = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, category }),
+        body: JSON.stringify({ ...data, defaultAmount: isProsthesis ? 0 : data.defaultAmount, category }),
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to save");
@@ -85,6 +86,7 @@ function OtherChargeCatalogDialog({
             </FormItem>
           )}
         />
+        {!isProsthesis && (
         <FormField
           control={form.control}
           name="defaultAmount"
@@ -98,6 +100,7 @@ function OtherChargeCatalogDialog({
             </FormItem>
           )}
         />
+        )}
         <div className="flex gap-2 pt-2">
           <Button type="submit" className="flex-1" disabled={mutation.isPending}>
             {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -208,7 +211,7 @@ export default function OtherChargesPage() {
                     <TableHeader className="bg-secondary/40">
                       <TableRow>
                         <TableHead>Name</TableHead>
-                        <TableHead className="text-right">Default Amount</TableHead>
+                        {category.value !== "PROSTHESIS" && <TableHead className="text-right">Default Amount</TableHead>}
                         <TableHead className="w-[100px] text-right">Action</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -216,7 +219,9 @@ export default function OtherChargesPage() {
                       {filteredCatalog.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">{item.name}</TableCell>
+                          {category.value !== "PROSTHESIS" && (
                           <TableCell className="text-right">₹{(item.defaultAmount ?? 0).toLocaleString()}</TableCell>
+                          )}
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
                               <Dialog open={editItem?.id === item.id} onOpenChange={(open) => !open && setEditItem(null)}>

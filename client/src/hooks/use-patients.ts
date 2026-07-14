@@ -85,13 +85,18 @@ export function useUpdatePatient(id: number) {
 export function useDischargePatient() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async ({ id, dischargeDate, dischargeTime, halfDayDischarge }: { id: number; dischargeDate?: string; dischargeTime?: string; halfDayDischarge?: boolean }) => {
       const url = buildUrl(api.patients.discharge.path, { id });
-      const res = await fetch(url, { method: "POST", credentials: "include" });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dischargeDate, dischargeTime, halfDayDischarge }),
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Failed to discharge patient");
       return api.patients.discharge.responses[200].parse(await res.json());
     },
-    onSuccess: (_, id) => {
+    onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.patients.get.path, id] });
       queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, id] });

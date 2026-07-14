@@ -1,8 +1,9 @@
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { 
-  users, roomTypes, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, otherChargeCatalog, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames, roomSwitches, patientRoomCharges,
+  users, roomTypes, roomNumbers, patients, doctors, patientDoctors, medicines, visits, prescriptions, charges, otherChargeCatalog, procedures, procedureCatalog, doctorRoomCharges, doctorSurgeryCharges, surgeryCatalog, patientSurgeries, surgeryNames, roomSwitches, patientRoomCharges,
   type User, type InsertUser, type RoomType, type InsertRoomType, type Patient, type InsertPatient,
+  type RoomNumber, type InsertRoomNumber,
   type Doctor, type InsertDoctor, type PatientDoctor, type InsertPatientDoctor, type Medicine, type InsertMedicine,
   type Visit, type InsertVisit, type Prescription, type InsertPrescription, type Charge, type InsertCharge,
   type OtherChargeCatalog, type InsertOtherChargeCatalog,
@@ -14,16 +15,33 @@ import {
 } from "@shared/schema";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "./db";
 
 const MemoryStoreSession = MemoryStore(session);
+const PostgresSessionStore = connectPgSimple(session);
+
+function formatDoctorName(name: string) {
+  const trimmed = name.trim();
+  return /^dr\.?\s+/i.test(trimmed) ? trimmed : `Dr. ${trimmed}`;
+}
+
+function normalizeDoctor<T extends Doctor>(doctor: T): T {
+  return { ...doctor, name: formatDoctorName(doctor.name) };
+}
 
 export class DatabaseStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new MemoryStoreSession({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    });
+    this.sessionStore = process.env.DATABASE_URL
+      ? new PostgresSessionStore({
+          pool,
+          createTableIfMissing: true,
+        })
+      : new MemoryStoreSession({
+          checkPeriod: 86400000, // prune expired entries every 24h
+        });
   }
 
   // User
@@ -68,15 +86,19 @@ export class DatabaseStorage {
 
   // Doctors
   async getDoctors(): Promise<Doctor[]> {
-    return await db.select().from(doctors);
+    const doctorsList = await db.select().from(doctors);
+    return doctorsList.map(normalizeDoctor);
   }
   async getDoctorByUserId(userId: number): Promise<Doctor | undefined> {
     const [doctor] = await db.select().from(doctors).where(eq(doctors.userId, userId));
-    return doctor;
+    return doctor ? normalizeDoctor(doctor) : undefined;
   }
   async createDoctor(insertDoctor: InsertDoctor): Promise<Doctor> {
-    const [doctor] = await db.insert(doctors).values(insertDoctor).returning();
-    return doctor;
+    const [doctor] = await db.insert(doctors).values({
+      ...insertDoctor,
+      name: formatDoctorName(insertDoctor.name),
+    }).returning();
+    return normalizeDoctor(doctor);
   }
   
   // Medicines
@@ -95,6 +117,22 @@ export class DatabaseStorage {
   async createRoomType(insertRoomType: InsertRoomType): Promise<RoomType> {
     const [roomType] = await db.insert(roomTypes).values(insertRoomType).returning();
     return roomType;
+  }
+  async getRoomNumbers(): Promise<RoomNumber[]> {
+    return await db.select().from(roomNumbers);
+  }
+  async getRoomNumberByTypeAndNumber(roomTypeId: number, number: string): Promise<RoomNumber | undefined> {
+    const [roomNumber] = await db.select().from(roomNumbers).where(
+      and(eq(roomNumbers.roomTypeId, roomTypeId), eq(roomNumbers.number, number))
+    );
+    return roomNumber;
+  }
+  async createRoomNumber(insertRoomNumber: InsertRoomNumber): Promise<RoomNumber> {
+    const [roomNumber] = await db.insert(roomNumbers).values(insertRoomNumber).returning();
+    return roomNumber;
+  }
+  async deleteRoomNumber(id: number): Promise<void> {
+    await db.delete(roomNumbers).where(eq(roomNumbers.id, id));
   }
 
   // Visits
@@ -312,6 +350,9 @@ export class DatabaseStorage {
   }
   async getRoomSwitchesByPatient(patientId: number): Promise<RoomSwitch[]> {
     return await db.select().from(roomSwitches).where(eq(roomSwitches.patientId, patientId));
+  }
+  async deleteRoomSwitch(id: number): Promise<void> {
+    await db.delete(roomSwitches).where(eq(roomSwitches.id, id));
   }
 
   // Patient Room Charges (explicit per-day entries)

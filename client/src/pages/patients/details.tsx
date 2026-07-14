@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { usePatient, usePatientBill, useDischargePatient, useAssignDoctor, useAssignedDoctors, useUpdatePatient } from "@/hooks/use-patients";
+import { usePatient, usePatientBill, useDischargePatient, useAssignDoctor, useAssignedDoctors, useUpdatePatient, usePatients } from "@/hooks/use-patients";
 import { useCreateVisit, useCreatePrescription, useCreateCharge } from "@/hooks/use-billing";
 import { useDoctors } from "@/hooks/use-doctors";
 import { useMedicines } from "@/hooks/use-medicines";
@@ -14,38 +14,83 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, FileText, Activity, CreditCard, Loader2, Pill, UserPlus, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft, BedDouble, UserCheck } from "lucide-react";
+import { ArrowLeft, FileText, Activity, CreditCard, Loader2, Pill, Plus, X, Pencil, Stethoscope, Scissors, ArrowRightLeft, BedDouble, UserCheck, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { insertChargeSchema } from "@shared/schema";
 import { api } from "@shared/routes";
 
-type BillDisplayMode = "progressive" | "date-wise";
+type BillDisplayMode = "progressive" | "date-wise" | "summarised";
+const EMPTY_ROOM_CONFIGURATION_MARKER = "__EMPTY_ROOM_CONFIGURATION__";
+
+function formatDoctorName(name: string) {
+  const trimmed = name.trim();
+  return /^dr\.?\s+/i.test(trimmed) ? trimmed : `Dr. ${trimmed}`;
+}
+
+function printPageSection(target: "receipt" | "bill") {
+  const printClass = target === "receipt" ? "printing-receipt" : "printing-bill";
+  document.body.classList.add(printClass);
+  window.print();
+  setTimeout(() => document.body.classList.remove(printClass), 500);
+}
 
 export default function PatientDetails() {
   const params = useParams();
   const id = parseInt(params.id || "0", 10);
   const { data: user } = useAuth();
   const { data: patient, isLoading: pLoading } = usePatient(id);
-  const { data: bill, isLoading: bLoading } = usePatientBill(id);
+  const { data: bill, isLoading: bLoading } = usePatientBill(id) as any;
   const { data: assignedDoctors } = useAssignedDoctors(id);
+  const { data: doctors } = useDoctors();
   const { data: roomTypes } = useRoomTypes();
+  const { data: roomNumbers = [] } = useQuery<any[]>({ queryKey: [api.roomNumbers.list.path] });
+  const { data: patients = [] } = usePatients();
   const dischargeMutation = useDischargePatient();
+  const assignDoctor = useAssignDoctor();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const updatePatient = useUpdatePatient(id);
   const [editOpen, setEditOpen] = useState(false);
+  const [advanceOpen, setAdvanceOpen] = useState(false);
+  const [advanceEditValue, setAdvanceEditValue] = useState("");
   const [quickSwitchOpen, setQuickSwitchOpen] = useState(false);
-  const [billViewMode, setBillViewMode] = useState<BillDisplayMode>("progressive");
+  const [dischargeOpen, setDischargeOpen] = useState(false);
+  const [billViewMode, setBillViewMode] = useState<BillDisplayMode>("summarised");
+  const advanceAmount = bill?.advanceAmount ?? patient?.advanceAmount ?? 0;
+  const finalAmount = bill?.finalAmount ?? ((bill?.grandTotal ?? 0) - advanceAmount);
+  const nowForDischarge = new Date();
+  const dischargeForm = useForm({
+    defaultValues: {
+      dischargeDate: format(nowForDischarge, "yyyy-MM-dd"),
+      dischargeTime: format(nowForDischarge, "HH:mm"),
+      halfDayDischarge: false,
+    },
+  });
 
   const switchForm = useForm({
-    defaultValues: { toRoomTypeId: "", isHalfDay: "true", visitDistribution: "old_new", notes: "" },
+    defaultValues: { toRoomTypeId: "", bedNumber: "", switchDate: format(new Date(), "yyyy-MM-dd"), isHalfDay: "true", visitDistribution: "old_new", notes: "" },
   });
   const watchIsHalfDay = switchForm.watch("isHalfDay");
+  const watchQuickSwitchRoomTypeId = switchForm.watch("toRoomTypeId");
+  const availableQuickSwitchRooms = useMemo(() => {
+    if (!watchQuickSwitchRoomTypeId) return [];
+    const selectedRoomTypeId = Number(watchQuickSwitchRoomTypeId);
+    const occupiedRoomNumbers = patients
+      .filter((entry: any) => !entry.discharged && entry.id !== patient?.id && entry.roomTypeId === selectedRoomTypeId)
+      .map((entry: any) => entry.bedNumber?.trim().toLowerCase())
+      .filter(Boolean);
+
+    return roomNumbers
+      .filter((room: any) => room.roomTypeId === selectedRoomTypeId)
+      .filter((room: any) => !occupiedRoomNumbers.includes(room.number.trim().toLowerCase()))
+      .sort((left: any, right: any) => left.number.localeCompare(right.number, undefined, { numeric: true, sensitivity: "base" }));
+  }, [patient?.id, patients, roomNumbers, watchQuickSwitchRoomTypeId]);
 
   const switchMutation = useMutation({
     mutationFn: (data: any) =>
@@ -54,6 +99,8 @@ export default function PatientDetails() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           toRoomTypeId: parseInt(data.toRoomTypeId),
+          bedNumber: data.bedNumber,
+          switchDate: data.switchDate,
           isHalfDay: data.isHalfDay === "true",
           visitDistribution: data.isHalfDay === "true" ? data.visitDistribution : "old_new",
           notes: data.notes || null,
@@ -68,7 +115,7 @@ export default function PatientDetails() {
       queryClient.invalidateQueries({ queryKey: [api.patients.get.path, id] });
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
       setQuickSwitchOpen(false);
-      switchForm.reset();
+      switchForm.reset({ toRoomTypeId: "", bedNumber: "", switchDate: format(new Date(), "yyyy-MM-dd"), isHalfDay: "true", visitDistribution: "old_new", notes: "" });
       toast({ title: "Room switched", description: "Patient has been moved to the new room." });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -83,12 +130,62 @@ export default function PatientDetails() {
     </div>
   );
 
+  const dischargeDateValue = dischargeForm.watch("dischargeDate");
+  const dischargeTimeValue = dischargeForm.watch("dischargeTime");
+  const dischargeDateTime = new Date(`${dischargeDateValue || format(new Date(), "yyyy-MM-dd")}T${dischargeTimeValue || "00:00"}`);
+  const hoursSinceAdmission = (dischargeDateTime.getTime() - new Date(patient.admissionDate).getTime()) / (1000 * 60 * 60);
+  const canHalfDayDischarge = hoursSinceAdmission >= 0 && hoursSinceAdmission <= 12;
+
   const handleDischarge = () => {
-    if (confirm("Are you sure you want to discharge this patient? This action finalizes the bill.")) {
-      dischargeMutation.mutate(id, {
-        onSuccess: () => toast({ title: "Success", description: "Patient discharged." })
-      });
-    }
+    const current = new Date();
+    dischargeForm.reset({
+      dischargeDate: format(current, "yyyy-MM-dd"),
+      dischargeTime: format(current, "HH:mm"),
+      halfDayDischarge: false,
+    });
+    setDischargeOpen(true);
+  };
+
+  const submitDischarge = (values: any) => {
+    dischargeMutation.mutate({
+      id,
+      dischargeDate: values.dischargeDate,
+      dischargeTime: values.dischargeTime,
+      halfDayDischarge: canHalfDayDischarge ? Boolean(values.halfDayDischarge) : false,
+    }, {
+      onSuccess: () => {
+        toast({ title: "Success", description: "Patient discharged." });
+        setDischargeOpen(false);
+      },
+      onError: () => toast({ title: "Error", description: "Failed to discharge patient.", variant: "destructive" }),
+    });
+  };
+
+  const openAdvanceEdit = () => {
+    setAdvanceEditValue(String(advanceAmount ?? 0));
+    setAdvanceOpen(true);
+  };
+
+  const saveAdvanceAmount = () => {
+    updatePatient.mutate({ advanceAmount: Number(advanceEditValue || 0) } as any, {
+      onSuccess: () => {
+        toast({ title: "Advance updated", description: "Patient advance amount saved." });
+        setAdvanceOpen(false);
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to update advance amount.", variant: "destructive" });
+      },
+    });
+  };
+
+  const handleAssignDoctorFromCard = (doctorId: string) => {
+    assignDoctor.mutate(
+      { patientId: patient.id, doctorId: parseInt(doctorId, 10) },
+      {
+        onSuccess: () => toast({ title: "Doctor assigned", description: "Assigned doctor updated." }),
+        onError: () => toast({ title: "Error", description: "Failed to assign doctor.", variant: "destructive" }),
+      },
+    );
   };
 
   return (
@@ -136,7 +233,47 @@ export default function PatientDetails() {
               <div><p className="text-muted-foreground mb-1">Admission Date</p><p className="font-semibold">{format(new Date(patient.admissionDate), "MMM dd, yyyy")}</p></div>
               <div><p className="text-muted-foreground mb-1">Bed Assigned</p><p className="font-semibold">{patient.bedNumber || "—"}</p></div>
               <div><p className="text-muted-foreground mb-1">Diagnosis</p><p className="font-semibold">{patient.illness || "Not specified"}</p></div>
-              <div><p className="text-muted-foreground mb-1">Assigned Doctor</p><p className="font-semibold">{assignedDoctors && assignedDoctors.length > 0 ? `Dr. ${assignedDoctors[0].doctorName}` : "Not assigned"}</p></div>
+              <div>
+                <p className="text-muted-foreground mb-1">Advance Amount</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold">{formatMoney(advanceAmount)}</p>
+                  {(user?.role === 'MANAGER' || user?.role === 'ADMIN') && !patient.discharged && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 no-print"
+                      onClick={openAdvanceEdit}
+                      data-testid="button-edit-advance-profile"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-muted-foreground mb-1">Assigned Doctor</p>
+                {(user?.role === 'MANAGER' || user?.role === 'ADMIN') && !patient.discharged && doctors ? (
+                  <Select
+                    value={assignedDoctors?.[0]?.doctorId ? String(assignedDoctors[0].doctorId) : ""}
+                    onValueChange={handleAssignDoctorFromCard}
+                    disabled={assignDoctor.isPending}
+                  >
+                    <SelectTrigger className="h-8 w-full max-w-[210px] border-0 bg-transparent px-0 font-semibold shadow-none focus:ring-0 no-print" data-testid="select-assigned-doctor-profile">
+                      <SelectValue placeholder="Assign doctor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {doctors.map((doctor: any) => (
+                        <SelectItem key={doctor.id} value={String(doctor.id)}>
+                          {doctor.name} ({doctor.specialization})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="font-semibold">{assignedDoctors && assignedDoctors.length > 0 ? formatDoctorName(assignedDoctors[0].doctorName) : "Not assigned"}</p>
+                )}
+              </div>
               <div className="col-span-2 md:col-span-1">
                 <p className="text-muted-foreground mb-1">Current Room</p>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -171,15 +308,50 @@ export default function PatientDetails() {
             <DialogHeader><DialogTitle>Switch Patient Room</DialogTitle></DialogHeader>
             <Form {...switchForm}>
               <form onSubmit={switchForm.handleSubmit((d) => switchMutation.mutate(d))} className="space-y-4">
+                <FormField control={switchForm.control} name="switchDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Switch Date</FormLabel>
+                    <FormControl><Input type="date" {...field} data-testid="input-quick-switch-date" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={switchForm.control} name="toRoomTypeId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>New Room</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        switchForm.setValue("bedNumber", "");
+                      }}
+                      value={field.value}
+                    >
                       <FormControl><SelectTrigger><SelectValue placeholder="Select new room" /></SelectTrigger></FormControl>
                       <SelectContent>
                         {roomTypes?.filter((r: any) => r.id !== patient.roomTypeId).map((r: any) => (
                           <SelectItem key={r.id} value={r.id.toString()}>{r.name} — ₹{r.dailyCharge}/day</SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={switchForm.control} name="bedNumber" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New Room Number</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={!watchQuickSwitchRoomTypeId}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={watchQuickSwitchRoomTypeId ? "Select room number" : "Select room type first"} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {availableQuickSwitchRooms.length > 0 ? (
+                          availableQuickSwitchRooms.map((room: any) => (
+                            <SelectItem key={room.id} value={room.number}>{room.number}</SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__none" disabled>No available room numbers</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -236,9 +408,72 @@ export default function PatientDetails() {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={advanceOpen} onOpenChange={setAdvanceOpen}>
+          <DialogContent className="sm:max-w-[380px]">
+            <DialogHeader><DialogTitle>Edit Advance Amount</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Patient</p>
+                <p className="font-semibold">{patient.name}</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Advance Amount</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={advanceEditValue}
+                  onChange={(event) => setAdvanceEditValue(event.target.value)}
+                  data-testid="input-profile-advance-amount"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={saveAdvanceAmount} disabled={updatePatient.isPending}>
+                  {updatePatient.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save
+                </Button>
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setAdvanceOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Tabs defaultValue="visits" className="no-print md:col-span-3 md:row-start-2">
+          <TabsList className="bg-secondary/50 p-1 rounded-xl flex-wrap h-auto gap-1">
+            <TabsTrigger value="visits" className="rounded-lg px-5"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
+            <TabsTrigger value="medicines" className="rounded-lg px-5"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
+            <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
+            <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgeries</TabsTrigger>
+            <TabsTrigger value="room-charges" className="rounded-lg px-5"><BedDouble className="w-4 h-4 mr-2" /> Room Configuration</TabsTrigger>
+            <TabsTrigger value="room-switch" className="rounded-lg px-5"><ArrowRightLeft className="w-4 h-4 mr-2" /> Room Switch</TabsTrigger>
+            <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Other Charges</TabsTrigger>
+            <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
+          </TabsList>
+          
+          <div className="mt-6">
+            <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} visitCharges={bill.visitCharges} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} /></TabsContent>
+            <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
+            <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+            <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+            <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
+            <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
+            <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
+            <TabsContent value="bill">
+              <BillView
+                patient={patient}
+                bill={bill}
+                mode={billViewMode}
+                onModeChange={setBillViewMode}
+                onPrint={() => printPageSection("bill")}
+              />
+            </TabsContent>
+          </div>
+        </Tabs>
+
         {/* Quick Stats Card */}
-        <Card className="border-border/50 shadow-md">
-          <CardHeader className="pb-4">
+        <Card className="h-fit border-border/50 shadow-md md:col-start-3 md:row-start-1">
+          <CardHeader className="pb-3">
             <CardTitle className="text-lg font-display">Bill Summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -246,6 +481,7 @@ export default function PatientDetails() {
               <span className="text-muted-foreground text-sm">Days Admitted</span>
               <span className="font-bold">{bill.daysAdmitted} Days</span>
             </div>
+            <div className="hidden">
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">Room Charge</span>
               <span className="font-medium">₹{(bill.roomCharge ?? 0).toLocaleString()}</span>
@@ -271,46 +507,92 @@ export default function PatientDetails() {
               <span className="text-muted-foreground">Medicines</span>
               <span className="font-medium">₹{bill.medicineCharges.toLocaleString()}</span>
             </div>
+            </div>
             <div className="flex justify-between items-center pt-1">
               <span className="text-lg font-display text-primary">Grand Total</span>
               <span className="text-2xl font-bold text-primary">₹{bill.grandTotal.toLocaleString()}</span>
             </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Advance Paid</span>
+              <span className="font-semibold text-emerald-700">-{formatMoney(advanceAmount)}</span>
+            </div>
+            <div className="flex justify-between items-center rounded-xl bg-primary/10 px-3 py-2">
+              <span className="font-display font-semibold text-primary">Final Payable</span>
+              <span className="text-2xl font-bold text-primary">{formatMoney(finalAmount)}</span>
+            </div>
+            <Button type="button" variant="outline" className="w-full gap-2 no-print" onClick={() => printPageSection("receipt")}>
+              <Printer className="w-4 h-4" />
+              Print Receipt
+            </Button>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="visits" className="no-print">
-        <TabsList className="bg-secondary/50 p-1 rounded-xl flex-wrap h-auto gap-1">
-          <TabsTrigger value="visits" className="rounded-lg px-5"><Activity className="w-4 h-4 mr-2" /> Visits</TabsTrigger>
-          <TabsTrigger value="medicines" className="rounded-lg px-5"><Pill className="w-4 h-4 mr-2" /> Medicines</TabsTrigger>
-          <TabsTrigger value="procedures" className="rounded-lg px-5"><Stethoscope className="w-4 h-4 mr-2" /> Procedures</TabsTrigger>
-          <TabsTrigger value="surgery" className="rounded-lg px-5"><Scissors className="w-4 h-4 mr-2" /> Surgeries</TabsTrigger>
-          <TabsTrigger value="room-charges" className="rounded-lg px-5"><BedDouble className="w-4 h-4 mr-2" /> Room Charges</TabsTrigger>
-          <TabsTrigger value="room-switch" className="rounded-lg px-5"><ArrowRightLeft className="w-4 h-4 mr-2" /> Room Switch</TabsTrigger>
-          <TabsTrigger value="charges" className="rounded-lg px-5"><CreditCard className="w-4 h-4 mr-2" /> Other Charges</TabsTrigger>
-          <TabsTrigger value="bill" className="rounded-lg px-5"><FileText className="w-4 h-4 mr-2" /> Detailed Bill</TabsTrigger>
-        </TabsList>
-        
-        <div className="mt-6">
-          <TabsContent value="visits"><VisitsTab patient={patient} visits={bill.visits} isManager={user?.role === 'MANAGER'} visitCharges={bill.visitCharges} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} /></TabsContent>
-          <TabsContent value="medicines"><MedicinesTab patient={patient} prescriptions={bill.prescriptions} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="procedures"><ProceduresTab patient={patient} procedures={bill.procedures ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="surgery"><SurgeryTab patient={patient} surgeries={bill.surgeries ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="room-charges"><RoomChargesTab patient={patient} roomChargesList={bill.roomChargesList ?? []} roomSwitches={bill.roomSwitches ?? []} canManage={user?.role === 'MANAGER' || user?.role === 'ADMIN'} /></TabsContent>
-          <TabsContent value="room-switch"><RoomSwitchTab patient={patient} roomSwitches={bill.roomSwitches ?? []} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="charges"><ChargesTab patient={patient} charges={bill.charges} isManager={user?.role === 'MANAGER'} /></TabsContent>
-          <TabsContent value="bill">
-            <BillView
-              patient={patient}
-              bill={bill}
-              mode={billViewMode}
-              onModeChange={setBillViewMode}
-            />
-          </TabsContent>
-        </div>
-      </Tabs>
+      <Dialog open={dischargeOpen} onOpenChange={setDischargeOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Discharge Patient</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={dischargeForm.handleSubmit(submitDischarge)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Discharge Date</label>
+                <Input type="date" {...dischargeForm.register("dischargeDate", { required: true })} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Discharge Time</label>
+                <div className="flex gap-2">
+                  <Input type="time" {...dischargeForm.register("dischargeTime", { required: true })} />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const current = new Date();
+                      dischargeForm.setValue("dischargeDate", format(current, "yyyy-MM-dd"));
+                      dischargeForm.setValue("dischargeTime", format(current, "HH:mm"));
+                    }}
+                  >
+                    Now
+                  </Button>
+                </div>
+              </div>
+            </div>
+            {canHalfDayDischarge && (
+              <label className="flex items-center gap-3 rounded-xl border border-border/60 bg-secondary/30 px-3 py-3 text-sm">
+                <input type="checkbox" className="h-4 w-4" {...dischargeForm.register("halfDayDischarge")} />
+                <span>
+                  <span className="font-semibold">Half day discharge</span>
+                  <span className="block text-xs text-muted-foreground">Patient is being discharged within 12 hours, so only half room charges will apply.</span>
+                </span>
+              </label>
+            )}
+            {!canHalfDayDischarge && (
+              <p className="text-xs text-muted-foreground">
+                Half day discharge is available only when discharge is within 12 hours of admission.
+              </p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <Button type="submit" disabled={dischargeMutation.isPending} className="flex-1">
+                {dischargeMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Confirm Discharge
+              </Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setDischargeOpen(false)}>Cancel</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <EditPatientDialog patient={patient} open={editOpen} onOpenChange={setEditOpen} />
+      <ReceiptView patient={patient} bill={bill} />
+      <div className="print-bill-container">
+        <BillView
+          patient={patient}
+          bill={bill}
+          mode={billViewMode}
+          onModeChange={setBillViewMode}
+          printMode
+        />
+      </div>
     </div>
   );
 }
@@ -330,7 +612,6 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
   const { data: roomTypes } = useRoomTypes();
   const { data: assignedDoctors } = useAssignedDoctors(patient.id);
   const createVisit = useCreateVisit();
-  const assignDoctor = useAssignDoctor();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -362,6 +643,7 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
             notes: null,
           }),
         });
+        if (!res.ok) throw new Error("Failed to save visit entry");
         created.push(await res.json());
       }
       return created;
@@ -398,8 +680,10 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
   });
 
   const getOrMaterializeEntry = async (row: any): Promise<any | null> => {
-    if (roomChargesList.length > 0) {
-      return roomChargesList.find((rc: any) => rc.id === row._chargeEntryId) ?? null;
+    const visibleRoomChargesList = roomChargesList.filter((rc: any) => rc.notes !== EMPTY_ROOM_CONFIGURATION_MARKER);
+    if (visibleRoomChargesList.length > 0 && row._chargeEntryId) {
+      const existingEntry = visibleRoomChargesList.find((rc: any) => rc.id === row._chargeEntryId) ?? null;
+      if (existingEntry) return existingEntry;
     }
     const created = await materializeVisitsMutation.mutateAsync();
     return created.find((e: any) =>
@@ -439,11 +723,15 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
     enabled: selectedDoctorId !== null,
   });
 
-  const visitForm = useForm({ defaultValues: { doctorId: "", charge: "" }});
+  const visitForm = useForm({ defaultValues: { date: format(new Date(), "yyyy-MM-dd"), doctorId: "", charge: "" }});
   
   const onSubmit = (data: any) => {
-    createVisit.mutate({ patientId: patient.id, doctorId: parseInt(data.doctorId), charge: parseInt(data.charge) }, {
-      onSuccess: () => { setOpen(false); setSelectedDoctorId(null); }
+    createVisit.mutate({ patientId: patient.id, doctorId: parseInt(data.doctorId), charge: parseInt(data.charge), date: data.date }, {
+      onSuccess: () => {
+        setOpen(false);
+        setSelectedDoctorId(null);
+        visitForm.reset({ date: format(new Date(), "yyyy-MM-dd"), doctorId: "", charge: "" });
+      }
     });
   };
 
@@ -464,22 +752,12 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
     visitForm.setValue("charge", doc.visitCharge.toString());
   };
 
-  const handleAssignDoctor = (doctorId: number) => {
-    assignDoctor.mutate({ patientId: patient.id, doctorId });
-  };
-
   return (
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="font-display">Doctor Visits</CardTitle>
         {!patient.discharged && (
           <div className="flex gap-2">
-            {canManage && doctors && (
-              <Select onValueChange={(val) => handleAssignDoctor(parseInt(val))}>
-                <SelectTrigger className="w-[180px] h-9"><UserPlus className="w-4 h-4 mr-2" /><SelectValue placeholder="Assign Doctor" /></SelectTrigger>
-                <SelectContent>{doctors.map(d => <SelectItem key={d.id} value={d.id.toString()}>{d.name} ({d.specialization})</SelectItem>)}</SelectContent>
-              </Select>
-            )}
             <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSelectedDoctorId(null); }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="hover-elevate"><Plus className="w-4 h-4 mr-2" /> Add Visit</Button>
@@ -488,12 +766,18 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                 <DialogHeader><DialogTitle>Record Doctor Visit</DialogTitle></DialogHeader>
                 <Form {...visitForm}>
                   <form onSubmit={visitForm.handleSubmit(onSubmit)} className="space-y-4">
+                    <FormField control={visitForm.control} name="date" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Visit Date</FormLabel>
+                        <FormControl><Input type="date" {...field} data-testid="input-visit-date" /></FormControl>
+                      </FormItem>
+                    )} />
                     <FormField control={visitForm.control} name="doctorId" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Doctor</FormLabel>
                         <Select onValueChange={(val) => { field.onChange(val); handleDoctorChange(val); }}>
                           <FormControl><SelectTrigger><SelectValue placeholder="Select Doctor" /></SelectTrigger></FormControl>
-                          <SelectContent>{doctors?.map(d => <SelectItem key={d.id} value={d.id.toString()}>Dr. {d.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{doctors?.map(d => <SelectItem key={d.id} value={d.id.toString()}>{formatDoctorName(d.name)}</SelectItem>)}</SelectContent>
                         </Select>
                       </FormItem>
                     )} />
@@ -528,7 +812,8 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
           <TableBody>
             {(() => {
               const assignedDoctorName = assignedDoctors && assignedDoctors.length > 0 ? assignedDoctors[0].doctorName : null;
-              const hasExplicit = roomChargesList.length > 0;
+              const visibleRoomChargesList = roomChargesList.filter((rc: any) => rc.notes !== EMPTY_ROOM_CONFIGURATION_MARKER);
+              const hasExplicit = visibleRoomChargesList.length > 0 && roomSwitches.length === 0;
 
               // Build 2 visit entries per day from computed or explicit room charges
               const dailyVisitRows: any[] = [];
@@ -538,7 +823,7 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                 if (hasExplicit) {
                   // Group entries by date to detect switch days (2 entries) vs normal days (1 entry)
                   const byDate = new Map<string, any[]>();
-                  for (const rc of roomChargesList.filter((rc: any) => (rc.visitCharge ?? 0) > 0)) {
+                  for (const rc of visibleRoomChargesList.filter((rc: any) => (rc.visitCharge ?? 0) > 0)) {
                     const dk = format(new Date(rc.date), 'yyyy-MM-dd');
                     if (!byDate.has(dk)) byDate.set(dk, []);
                     byDate.get(dk)!.push(rc);
@@ -556,6 +841,18 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                         const rt = roomTypes.find((r: any) => r.id === rc.roomTypeId);
                         visitEntries.push({ roomTypeName: rt?.name ?? "—", charge: rc.visitCharge ?? 0, _slotDefaultCharge: rc.visitCharge ?? 0, _chargeEntryId: rc.id, _roomTypeId: rc.roomTypeId, _slotIndex: idx });
                       });
+                    }
+                    if (entries.length === 1) {
+                      const rc = entries[0];
+                      const rt = roomTypes.find((r: any) => r.id === rc.roomTypeId);
+                      const totalVisitCharge = rc.visitCharge ?? 0;
+                      const baseVisitCharge = rt?.visitCharge ?? 0;
+                      if (!(baseVisitCharge > 0 && totalVisitCharge === baseVisitCharge * 2)) {
+                        visitEntries.splice(0, visitEntries.length);
+                        if (totalVisitCharge > 0) {
+                          visitEntries.push({ roomTypeName: rt?.name ?? "?", charge: totalVisitCharge, _slotDefaultCharge: totalVisitCharge, _chargeEntryId: rc.id, _roomTypeId: rc.roomTypeId, _slotIndex: 0 });
+                        }
+                      }
                     }
                     dayEntries.push({ date: dateKey, _date: new Date(entries[0].date), visitEntries, doctorName: assignedDoctorName });
                   }
@@ -619,7 +916,7 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                     <TableCell className="font-medium">{format(row._date, "dd MMM yyyy")}</TableCell>
                     <TableCell>
                       <span className="flex items-center gap-2">
-                        {row.doctorName ? `Dr. ${row.doctorName}` : <span className="text-muted-foreground">—</span>}
+                        {row.doctorName ? formatDoctorName(row.doctorName) : <span className="text-muted-foreground">—</span>}
                         <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Daily Visit</span>
                       </span>
                     </TableCell>
@@ -643,7 +940,7 @@ function VisitsTab({ patient, visits, isManager, visitCharges, roomChargesList, 
                 ) : (
                   <TableRow key={row._key}>
                     <TableCell className="font-medium">{format(row._date, "dd MMM yyyy, HH:mm")}</TableCell>
-                    <TableCell>Dr. {doctors?.find((d: any) => d.id === row.doctorId)?.name || 'Unknown'}</TableCell>
+                    <TableCell>{doctors?.find((d: any) => d.id === row.doctorId)?.name ? formatDoctorName(doctors.find((d: any) => d.id === row.doctorId)!.name) : 'Unknown'}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{row.roomTypeName}</TableCell>
                     <TableCell className="text-right font-medium">₹{row.charge.toLocaleString()}</TableCell>
                     {canManage && <TableCell />}
@@ -817,11 +1114,19 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
 
   const handleCatalogPick = (value: string) => {
     setSelectedCatalogId(value);
-    if (value === "custom") return;
+    if (value === "custom") {
+      form.setValue("description", "", { shouldValidate: false, shouldDirty: true });
+      if (chargeType !== "PROSTHESIS") {
+        form.setValue("amount", 0, { shouldValidate: false, shouldDirty: true });
+      }
+      return;
+    }
     const selectedItem = filteredCatalog.find((item: any) => item.id.toString() === value);
     if (!selectedItem) return;
     form.setValue("description", selectedItem.name, { shouldValidate: true, shouldDirty: true });
-    form.setValue("amount", selectedItem.defaultAmount ?? 0, { shouldValidate: true, shouldDirty: true });
+    if (chargeType !== "PROSTHESIS") {
+      form.setValue("amount", selectedItem.defaultAmount ?? 0, { shouldValidate: true, shouldDirty: true });
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -874,22 +1179,28 @@ function ChargesTab({ patient, charges, isManager }: { patient: any, charges: an
                     </Tabs>
                   </div>
                   <div className="space-y-2">
-                    <FormLabel>Saved Options</FormLabel>
+                    <FormLabel>{chargeType === "PROSTHESIS" ? "Prosthesis Name" : "Saved Options"}</FormLabel>
                     <Select value={selectedCatalogId} onValueChange={handleCatalogPick}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Pick a saved charge or keep custom" />
+                        <SelectValue placeholder={chargeType === "PROSTHESIS" ? "Pick a saved prosthesis name or keep custom" : "Pick a saved charge or keep custom"} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="custom">Custom entry</SelectItem>
                         {filteredCatalog.map((item: any) => (
                           <SelectItem key={item.id} value={item.id.toString()}>
+                            {chargeType === "PROSTHESIS" ? item.name : (
+                              <>
                             {item.name} - ₹{(item.defaultAmount ?? 0).toLocaleString()}
+                              </>
+                            )}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Choose a saved option or type your own description below.
+                      {chargeType === "PROSTHESIS"
+                        ? "Choose a prosthesis name, then enter the charge amount below."
+                        : "Choose a saved option or type your own description below."}
                     </p>
                   </div>
                   <FormField control={form.control} name="description" render={({ field }) => (
@@ -1067,7 +1378,7 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
                     <SelectContent>
                       {doctors?.map(d => (
                         <SelectItem key={d.id} value={d.id.toString()}>
-                          Dr. {d.name} — {d.specialization}
+                          {formatDoctorName(d.name)} — {d.specialization}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1176,7 +1487,7 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
                 <TableRow key={p.id} data-testid={`row-procedure-${p.id}`}>
                   <TableCell>{format(new Date(p.date), "MMM dd, yyyy")}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {p.doctorId ? `Dr. ${doctors?.find(d => d.id === p.doctorId)?.name ?? "Unknown"}` : "—"}
+                    {p.doctorId ? formatDoctorName(doctors?.find(d => d.id === p.doctorId)?.name ?? "Unknown") : "—"}
                   </TableCell>
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell className="text-muted-foreground">{p.description || "—"}</TableCell>
@@ -1200,6 +1511,10 @@ function ProceduresTab({ patient, procedures, isManager }: { patient: any, proce
 
 function EditPatientDialog({ patient, open, onOpenChange }: { patient: any, open: boolean, onOpenChange: (v: boolean) => void }) {
   const { data: roomTypes } = useRoomTypes();
+  const { data: roomNumbers = [] } = useQuery<Array<{ id: number; roomTypeId: number; number: string }>>({
+    queryKey: [api.roomNumbers.list.path],
+  });
+  const { data: patients = [] } = usePatients();
   const updatePatient = useUpdatePatient(patient.id);
   const { toast } = useToast();
 
@@ -1212,6 +1527,7 @@ function EditPatientDialog({ patient, open, onOpenChange }: { patient: any, open
     illness: z.string().optional(),
     bedNumber: z.string().min(1, "Bed number is required"),
     roomTypeId: z.coerce.number().min(1, "Room type is required"),
+    advanceAmount: z.coerce.number().min(0, "Advance amount must be 0 or more"),
   });
 
   const form = useForm<z.infer<typeof schema>>({
@@ -1225,8 +1541,34 @@ function EditPatientDialog({ patient, open, onOpenChange }: { patient: any, open
       illness: patient.illness ?? "",
       bedNumber: patient.bedNumber,
       roomTypeId: patient.roomTypeId,
+      advanceAmount: patient.advanceAmount ?? 0,
     },
   });
+
+  const selectedRoomTypeId = Number(form.watch("roomTypeId") ?? 0);
+
+  const availableRooms = useMemo(() => {
+    if (!selectedRoomTypeId) return [];
+
+    const occupiedRoomNumbers = new Set(
+      patients
+        .filter((entry) => !entry.discharged && entry.roomTypeId === selectedRoomTypeId && entry.id !== patient.id)
+        .map((entry) => entry.bedNumber?.trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    const matchingRooms = roomNumbers
+      .filter((room) => room.roomTypeId === selectedRoomTypeId)
+      .filter((room) => !occupiedRoomNumbers.has(room.number.trim().toLowerCase()) || room.number === patient.bedNumber)
+      .sort((left, right) => left.number.localeCompare(right.number, undefined, { numeric: true, sensitivity: "base" }));
+
+    const hasCurrentRoom = matchingRooms.some((room) => room.number === patient.bedNumber);
+    if (!hasCurrentRoom && patient.bedNumber && selectedRoomTypeId === patient.roomTypeId) {
+      return [{ id: -1, roomTypeId: patient.roomTypeId, number: patient.bedNumber }, ...matchingRooms];
+    }
+
+    return matchingRooms;
+  }, [patient.bedNumber, patient.id, patients, roomNumbers, selectedRoomTypeId]);
 
   const onSubmit = (data: z.infer<typeof schema>) => {
     updatePatient.mutate(data, {
@@ -1298,17 +1640,40 @@ function EditPatientDialog({ patient, open, onOpenChange }: { patient: any, open
                   <FormMessage />
                 </FormItem>
               )} />
+              <FormField control={form.control} name="advanceAmount" render={({ field }) => (
+                <FormItem className="col-span-2">
+                  <FormLabel>Advance Amount</FormLabel>
+                  <FormControl><Input type="number" min={0} data-testid="input-advance-amount" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
               <FormField control={form.control} name="bedNumber" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Bed Number</FormLabel>
-                  <FormControl><Input data-testid="input-bed-number" {...field} /></FormControl>
+                  <FormLabel>Room Number</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger data-testid="input-bed-number"><SelectValue placeholder={selectedRoomTypeId ? "Select available room" : "Select room type first"} /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {availableRooms.length > 0 ? (
+                        availableRooms.map((room) => (
+                          <SelectItem key={room.id} value={room.number}>{room.number}</SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="__none" disabled>
+                          {selectedRoomTypeId ? "No unoccupied rooms available" : "Select room type first"}
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField control={form.control} name="roomTypeId" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Room Type</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} defaultValue={field.value?.toString()}>
+                  <Select onValueChange={(v) => {
+                    field.onChange(Number(v));
+                    form.setValue("bedNumber", "");
+                  }} defaultValue={field.value?.toString()}>
                     <FormControl><SelectTrigger data-testid="select-room-type"><SelectValue placeholder="Select room type" /></SelectTrigger></FormControl>
                     <SelectContent>
                       {roomTypes?.map(rt => (
@@ -1345,14 +1710,20 @@ const SURGERY_CATEGORIES = [
   { key: "otAssistantCharge",      label: "OT Assistant Charge",     category: "OT_ASSISTANT" },
 ] as const;
 
+const SURGERY_TICK_OPTIONS = [
+  { key: "armLaminarCharge", label: "Arm Laminar", catalogName: "arm laminar" },
+  { key: "airFlowSterilisationCharge", label: "Air Flow Sterilisation", catalogName: "air flow sterilisation" },
+  { key: "gaksCharge", label: "GAKS", catalogName: "gaks" },
+] as const;
+
 // Mapping from surgery category key to doctor filter role and surgery-charge category key.
 // noDoctor: true means this line shows only a charge input (no doctor dropdown).
 const DOCTOR_CATEGORY_CONFIG: Record<string, { roleFilter: "isSurgeon" | "isAssistantSurgeon" | "isOtAssistant" | "isAnaesthetist" | null; chargeCategory: string; noDoctor?: boolean }> = {
   surgeonCharge:          { roleFilter: "isSurgeon",           chargeCategory: "SURGEON" },
-  assistantSurgeonCharge: { roleFilter: "isAssistantSurgeon",  chargeCategory: "ASSISTANT_SURGEON" },
+  assistantSurgeonCharge: { roleFilter: "isSurgeon",           chargeCategory: "ASSISTANT_SURGEON" },
   anaesthetistCharge:     { roleFilter: "isAnaesthetist",      chargeCategory: "ANAESTHETIST" },
   otCharge:               { roleFilter: null,                  chargeCategory: "OT",   noDoctor: true },
-  otAssistantCharge:      { roleFilter: "isOtAssistant",       chargeCategory: "OT_ASSISTANT" },
+  otAssistantCharge:      { roleFilter: null,                  chargeCategory: "OT_ASSISTANT", noDoctor: true },
 };
 
 function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries: any[], isManager: boolean }) {
@@ -1365,15 +1736,13 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
   const { data: allDoctors } = useQuery<any[]>({ queryKey: [api.doctors.list.path] });
   const { data: catalog } = useQuery<any[]>({ queryKey: ["/api/surgery-catalog"] });
 
-  const { data: surgeryNamesList } = useQuery<any[]>({ queryKey: ["/api/surgery-names"] });
-  const [selectedSurgeryName, setSelectedSurgeryName] = useState<string>("");
   const [surgeryDate, setSurgeryDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
-  const defaultCharges = { surgeryCharge: "", surgeonCharge: "", assistantSurgeonCharge: "", anaesthetistCharge: "", otCharge: "", otAssistantCharge: "" };
+  const defaultCharges = { surgeryCharge: "", surgeonCharge: "", assistantSurgeonCharge: "", anaesthetistCharge: "", otCharge: "", otAssistantCharge: "", armLaminarCharge: "", airFlowSterilisationCharge: "", gaksCharge: "" };
   const [charges, setCharges] = useState<Record<string, string>>({ ...defaultCharges });
   const [selectedDoctors, setSelectedDoctors] = useState<Record<string, string>>({});
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
 
-  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); setSelectedSurgeryName(""); setSurgeryDate(format(new Date(), "yyyy-MM-dd")); setSelectedFeatureIds([]); };
+  const resetDialog = () => { setCharges({ ...defaultCharges }); setSelectedDoctors({}); setSurgeryDate(format(new Date(), "yyyy-MM-dd")); setSelectedFeatureIds([]); };
 
   const handleCatalogSelect = (categoryKey: string, catalogId: string, cat: string) => {
     const item = catalog?.find((c: any) => c.id.toString() === catalogId && c.category === cat);
@@ -1397,6 +1766,12 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
     setCharges((prev) => ({ ...prev, surgeryCharge: total ? total.toString() : "" }));
   };
 
+  const toggleSurgeryTick = (key: string, catalogName: string) => {
+    const enabled = (parseInt(charges[key] || "0") || 0) > 0;
+    const item = featureOptions.find((feature: any) => feature.name?.trim().toLowerCase() === catalogName);
+    setCharges((prev) => ({ ...prev, [key]: enabled ? "" : String(item?.cost ?? 0) }));
+  };
+
   const handleDoctorSelect = async (categoryKey: string, doctorId: string) => {
     setSelectedDoctors(prev => ({ ...prev, [categoryKey]: doctorId }));
     const config = DOCTOR_CATEGORY_CONFIG[categoryKey];
@@ -1418,7 +1793,6 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
       );
       const body = {
         ...chargeBody,
-        ...(selectedSurgeryName ? { surgeryName: selectedSurgeryName } : {}),
         date: surgeryDate,
       };
       const res = await fetch(`/api/patients/${patient.id}/surgeries`, {
@@ -1453,7 +1827,8 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
 
   const totalForSurgery = (s: any) =>
     (s.surgeryCharge ?? 0) + (s.surgeonCharge ?? 0) + (s.assistantSurgeonCharge ?? 0) +
-    (s.anaesthetistCharge ?? 0) + (s.otCharge ?? 0) + (s.otAssistantCharge ?? 0);
+    (s.anaesthetistCharge ?? 0) + (s.otCharge ?? 0) + (s.otAssistantCharge ?? 0) +
+    (s.armLaminarCharge ?? 0) + (s.airFlowSterilisationCharge ?? 0) + (s.gaksCharge ?? 0);
 
   const getFilteredDoctors = (roleFilter: string | null) => {
     if (!allDoctors) return [];
@@ -1490,27 +1865,6 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                   />
                 </div>
 
-                {/* Surgery Name selector */}
-                <div className="border border-primary/30 rounded-lg p-3 space-y-1.5 bg-primary/5">
-                  <p className="text-sm font-semibold text-foreground">Surgery Name</p>
-                  <Select value={selectedSurgeryName} onValueChange={setSelectedSurgeryName}>
-                    <SelectTrigger data-testid="select-surgery-name">
-                      <SelectValue placeholder={surgeryNamesList && surgeryNamesList.length > 0 ? "Select surgery name…" : "No surgery names — add via Surgeries menu"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {surgeryNamesList && surgeryNamesList.length > 0 ? (
-                        surgeryNamesList.map((sn: any) => (
-                          <SelectItem key={sn.id} value={sn.name}>{sn.name}</SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="__none" disabled>No surgery names added yet</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {selectedSurgeryName && (
-                    <p className="text-xs text-primary font-medium">Selected: {selectedSurgeryName}</p>
-                  )}
-                </div>
 
                 {/* Features */}
                 {(() => {
@@ -1559,6 +1913,28 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                   );
                 })()}
 
+                <div className="border border-border/50 rounded-lg p-3 space-y-2 bg-secondary/20">
+                  <p className="text-sm font-semibold text-foreground">Additional Surgery Options</p>
+                  <div className="grid gap-2">
+                    {SURGERY_TICK_OPTIONS.map((option) => {
+                      const amount = parseInt(charges[option.key] || "0") || 0;
+                      const catalogItem = featureOptions.find((feature: any) => feature.name?.trim().toLowerCase() === option.catalogName);
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-colors ${amount > 0 ? "border-primary bg-primary/10 text-primary" : "border-border/60 bg-background hover:bg-secondary/40"}`}
+                          onClick={() => toggleSurgeryTick(option.key, option.catalogName)}
+                        >
+                          <span className="font-medium">{option.label}</span>
+                          <span className="text-sm">{formatMoney(catalogItem?.cost ?? 0)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Configure these prices in the Surgery Catalog using the same names.</p>
+                </div>
+
                 {/* Doctor-linked charges */}
                 {SURGERY_CATEGORIES.slice(1).map(({ key, label }) => {
                   const config = DOCTOR_CATEGORY_CONFIG[key];
@@ -1579,7 +1955,7 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                               <SelectItem value="__none">— None —</SelectItem>
                               {doctors.map((d: any) => (
                                 <SelectItem key={d.id} value={d.id.toString()}>
-                                  Dr. {d.name}
+                                  {formatDoctorName(d.name)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1597,7 +1973,7 @@ function SurgeryTab({ patient, surgeries, isManager }: { patient: any, surgeries
                       </div>
                       {!config?.noDoctor && selectedDoctors[key] && selectedDoctors[key] !== "__none" && charges[key] && (
                         <p className="text-xs text-primary">
-                          Auto-filled from Dr. {doctors.find((d: any) => d.id.toString() === selectedDoctors[key])?.name}'s configured rate
+                          Auto-filled from {formatDoctorName(doctors.find((d: any) => d.id.toString() === selectedDoctors[key])?.name ?? "")}'s configured rate
                         </p>
                       )}
                     </div>
@@ -1682,7 +2058,7 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
 
   while (current <= endDay && calendarDays < maxDays) {
     const dayTime = current.getTime();
-    const switchOnDay = sorted.find(sw => toMidnight(new Date(sw.switchDate)).getTime() === dayTime);
+    const switchOnDay = sorted.find(sw => toUTCMidnight(new Date(sw.switchDate)).getTime() === dayTime);
 
     if (switchOnDay && switchOnDay.isHalfDay) {
       const oldRt = roomTypes.find((r: any) => r.id === switchOnDay.fromRoomTypeId);
@@ -1713,6 +2089,8 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         roomCharge: Math.round((oldRt?.dailyCharge ?? 0) / 2),
         nursingCharge: Math.round((oldRt?.nursingCharge ?? 0) / 2),
         rmoCharge: Math.round((oldRt?.rmoCharge ?? 0) / 2),
+        incentiviseCharge: Math.round((oldRt?.incentiviseCharge ?? 0) / 2),
+        monitorCharge: Math.round((oldRt?.monitorCharge ?? 0) / 2),
         visitCharge: visitEntries[0].charge,
         visitEntries: [visitEntries[0]],
         isHalfDay: true,
@@ -1725,6 +2103,8 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         roomCharge: Math.round((newRt?.dailyCharge ?? 0) / 2),
         nursingCharge: Math.round((newRt?.nursingCharge ?? 0) / 2),
         rmoCharge: Math.round((newRt?.rmoCharge ?? 0) / 2),
+        incentiviseCharge: Math.round((newRt?.incentiviseCharge ?? 0) / 2),
+        monitorCharge: Math.round((newRt?.monitorCharge ?? 0) / 2),
         visitCharge: visitEntries[1].charge,
         visitEntries: [visitEntries[1]],
         isHalfDay: true,
@@ -1732,9 +2112,9 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
       });
     } else {
       let roomTypeId = initialRoomTypeId;
-      const isSwitchDay = sorted.some(sw => toMidnight(new Date(sw.switchDate)).getTime() === dayTime && !sw.isHalfDay);
+      const isSwitchDay = sorted.some(sw => toUTCMidnight(new Date(sw.switchDate)).getTime() === dayTime && !sw.isHalfDay);
       for (const sw of sorted) {
-        if (toMidnight(new Date(sw.switchDate)) <= current) roomTypeId = sw.toRoomTypeId;
+        if (toUTCMidnight(new Date(sw.switchDate)) <= current) roomTypeId = sw.toRoomTypeId;
       }
       const rt = roomTypes.find((r: any) => r.id === roomTypeId);
       result.push({
@@ -1744,6 +2124,8 @@ function computeDailyRoomCharges(patient: any, roomSwitches: any[], roomTypes: a
         roomCharge: rt?.dailyCharge ?? 0,
         nursingCharge: rt?.nursingCharge ?? 0,
         rmoCharge: rt?.rmoCharge ?? 0,
+        incentiviseCharge: rt?.incentiviseCharge ?? 0,
+        monitorCharge: rt?.monitorCharge ?? 0,
         visitCharge: (rt?.visitCharge ?? 0) * 2,
         visitEntries: [
           { roomTypeName: rt?.name ?? "Unknown", charge: rt?.visitCharge ?? 0 },
@@ -1770,7 +2152,17 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
   const [editing, setEditing] = useState<any | null>(null);
 
   const form = useForm({
-    defaultValues: { date: format(new Date(), "yyyy-MM-dd"), roomTypeId: "", roomCharge: 0, nursingCharge: 0, rmoCharge: 0, visitCharge: 0, notes: "" },
+    defaultValues: {
+      date: format(new Date(), "yyyy-MM-dd"),
+      roomTypeId: "",
+      roomCharge: 0,
+      nursingCharge: 0,
+      rmoCharge: 0,
+      incentiviseCharge: 0,
+      monitorCharge: 0,
+      visitCharge: 0,
+      notes: "",
+    },
   });
 
   const selectedRoomTypeId = form.watch("roomTypeId");
@@ -1782,6 +2174,8 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
         form.setValue("roomCharge", rt.dailyCharge ?? 0);
         form.setValue("nursingCharge", rt.nursingCharge ?? 0);
         form.setValue("rmoCharge", rt.rmoCharge ?? 0);
+        form.setValue("incentiviseCharge", rt.incentiviseCharge ?? 0);
+        form.setValue("monitorCharge", rt.monitorCharge ?? 0);
         form.setValue("visitCharge", rt.visitCharge ?? 0);
       }
     }
@@ -1789,7 +2183,17 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
 
   const openAdd = () => {
     setEditing(null);
-    form.reset({ date: format(new Date(), "yyyy-MM-dd"), roomTypeId: String(patient.roomTypeId ?? ""), roomCharge: 0, nursingCharge: 0, rmoCharge: 0, visitCharge: 0, notes: "" });
+    form.reset({
+      date: format(new Date(), "yyyy-MM-dd"),
+      roomTypeId: String(patient.roomTypeId ?? ""),
+      roomCharge: 0,
+      nursingCharge: 0,
+      rmoCharge: 0,
+      incentiviseCharge: 0,
+      monitorCharge: 0,
+      visitCharge: 0,
+      notes: "",
+    });
     setOpen(true);
   };
 
@@ -1801,6 +2205,8 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
       roomCharge: rc.roomCharge,
       nursingCharge: rc.nursingCharge,
       rmoCharge: rc.rmoCharge,
+      incentiviseCharge: rc.incentiviseCharge ?? 0,
+      monitorCharge: rc.monitorCharge ?? 0,
       visitCharge: rc.visitCharge ?? 0,
       notes: rc.notes ?? "",
     });
@@ -1816,6 +2222,8 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
       roomCharge: rc.roomCharge,
       nursingCharge: rc.nursingCharge,
       rmoCharge: rc.rmoCharge,
+      incentiviseCharge: rc.incentiviseCharge ?? 0,
+      monitorCharge: rc.monitorCharge ?? 0,
       visitCharge: rc.visitCharge ?? 0,
       notes: "",
     });
@@ -1838,6 +2246,8 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
           roomCharge: Number(values.roomCharge),
           nursingCharge: Number(values.nursingCharge),
           rmoCharge: Number(values.rmoCharge),
+          incentiviseCharge: Number(values.incentiviseCharge ?? 0),
+          monitorCharge: Number(values.monitorCharge ?? 0),
           visitCharge: Number(values.visitCharge ?? 0),
           notes: values.notes || null,
         }),
@@ -1854,6 +2264,14 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
     onError: () => toast({ title: "Error", description: "Failed to save room charge.", variant: "destructive" }),
   });
 
+  const showMinimumRoomChargeError = () => {
+    toast({
+      title: "Room charge required",
+      description: "There should be at least one room charge.",
+      variant: "destructive",
+    });
+  };
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/patients/${patient.id}/room-charges/${id}`, { method: "DELETE", credentials: "include" });
@@ -1867,21 +2285,73 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
     onError: () => toast({ title: "Error", description: "Failed to delete.", variant: "destructive" }),
   });
 
-  const hasExplicit = roomChargesList.length > 0;
+  const visibleRoomChargesList = roomChargesList.filter((row: any) => row.notes !== EMPTY_ROOM_CONFIGURATION_MARKER);
+  const hasExplicit = visibleRoomChargesList.length > 0 && roomSwitches.length === 0;
   const displayRows: any[] = hasExplicit
-    ? roomChargesList
+    ? visibleRoomChargesList
     : computeDailyRoomCharges(patient, roomSwitches, roomTypes ?? []);
+
+  const deleteAutoRowMutation = useMutation({
+    mutationFn: async (rowIndex: number) => {
+      const rowsToKeep = displayRows.filter((_row, idx) => idx !== rowIndex);
+      if (rowsToKeep.length === 0) {
+        throw new Error("MINIMUM_ROOM_CHARGE_REQUIRED");
+      }
+
+      for (const row of rowsToKeep) {
+        const res = await fetch(`/api/patients/${patient.id}/room-charges`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            date: row.date,
+            roomTypeId: row.roomTypeId ? Number(row.roomTypeId) : null,
+            roomCharge: Number(row.roomCharge ?? 0),
+            nursingCharge: Number(row.nursingCharge ?? 0),
+            rmoCharge: Number(row.rmoCharge ?? 0),
+            incentiviseCharge: Number(row.incentiviseCharge ?? 0),
+            monitorCharge: Number(row.monitorCharge ?? 0),
+            visitCharge: Number(row.visitCharge ?? 0),
+            notes: row.notes || null,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to save remaining room charges");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/patients', patient.id, 'bill'] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      toast({ title: "Deleted", description: "Room charge removed." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to delete.", variant: "destructive" }),
+  });
+
+  const requestDeleteRoomCharge = (row: any, rowIndex: number, isAutoRow: boolean) => {
+    if (displayRows.length <= 1) {
+      showMinimumRoomChargeError();
+      return;
+    }
+
+    if (isAutoRow) {
+      deleteAutoRowMutation.mutate(rowIndex);
+      return;
+    }
+
+    deleteMutation.mutate(row.id);
+  };
 
   const totalRoom = displayRows.reduce((s: number, r: any) => s + (r.roomCharge ?? 0), 0);
   const totalNursing = displayRows.reduce((s: number, r: any) => s + (r.nursingCharge ?? 0), 0);
   const totalRmo = displayRows.reduce((s: number, r: any) => s + (r.rmoCharge ?? 0), 0);
+  const totalIncentivise = displayRows.reduce((s: number, r: any) => s + (r.incentiviseCharge ?? 0), 0);
+  const totalMonitor = displayRows.reduce((s: number, r: any) => s + (r.monitorCharge ?? 0), 0);
   const totalVisit = displayRows.reduce((s: number, r: any) => s + (r.visitCharge ?? 0), 0);
 
   return (
     <Card className="border-border/50 shadow-md">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
         <CardTitle className="font-display text-lg flex items-center gap-2">
-          <BedDouble className="w-5 h-5 text-primary" /> Room Charges
+          <BedDouble className="w-5 h-5 text-primary" /> Room Configuration
           {!hasExplicit && (
             <Badge variant="outline" className="text-xs font-normal text-muted-foreground ml-1">Auto-calculated</Badge>
           )}
@@ -1912,6 +2382,8 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Room Type</TableHead>
+                  <TableHead className="text-right">Incentivise</TableHead>
+                  <TableHead className="text-right">Monitor</TableHead>
                   <TableHead className="text-right">Room (₹)</TableHead>
                   <TableHead className="text-right">Nursing (₹)</TableHead>
                   <TableHead className="text-right">RMO (₹)</TableHead>
@@ -1925,7 +2397,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                   const rtName = hasExplicit
                     ? (roomTypes?.find((r: any) => r.id === rc.roomTypeId)?.name ?? "—")
                     : rc.roomTypeName;
-                  const rowTotal = (rc.roomCharge ?? 0) + (rc.nursingCharge ?? 0) + (rc.rmoCharge ?? 0) + (rc.visitCharge ?? 0);
+                  const rowTotal = (rc.roomCharge ?? 0) + (rc.nursingCharge ?? 0) + (rc.rmoCharge ?? 0) + (rc.incentiviseCharge ?? 0) + (rc.monitorCharge ?? 0) + (rc.visitCharge ?? 0);
                   const isAutoRow = !hasExplicit;
                   return (
                     <TableRow key={hasExplicit ? rc.id : idx} data-testid={hasExplicit ? `row-room-charge-${rc.id}` : `row-room-charge-auto-${idx}`}>
@@ -1941,6 +2413,8 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                           )}
                         </span>
                       </TableCell>
+                      <TableCell className="text-right">ƒ,1{(rc.incentiviseCharge ?? 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right">ƒ,1{(rc.monitorCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.roomCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.nursingCharge ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">₹{(rc.rmoCharge ?? 0).toLocaleString()}</TableCell>
@@ -1956,11 +2430,16 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
-                            {!isAutoRow && (
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => deleteMutation.mutate(rc.id)} data-testid={`button-delete-room-charge-${rc.id}`}>
-                                <X className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                              disabled={deleteMutation.isPending || deleteAutoRowMutation.isPending}
+                              onClick={() => requestDeleteRoomCharge(rc, idx, isAutoRow)}
+                              data-testid={`button-delete-room-charge-${isAutoRow ? `auto-${idx}` : rc.id}`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </Button>
                           </div>
                         </TableCell>
                       )}
@@ -1974,7 +2453,7 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
               <span>Nursing: ₹{totalNursing.toLocaleString()}</span>
               <span>RMO: ₹{totalRmo.toLocaleString()}</span>
               <span>Visit: ₹{totalVisit.toLocaleString()}</span>
-              <span className="text-primary text-base">Total: ₹{(totalRoom + totalNursing + totalRmo + totalVisit).toLocaleString()}</span>
+              <span className="text-primary text-base">Total: ₹{(totalRoom + totalNursing + totalRmo + totalIncentivise + totalMonitor + totalVisit).toLocaleString()}</span>
             </div>
           </>
         )}
@@ -2017,7 +2496,15 @@ function RoomChargesTab({ patient, roomChargesList, roomSwitches, canManage }: {
                 <Input type="number" min={0} data-testid="input-room-charge-rmo" {...form.register("rmoCharge")} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Visit (₹)</label>
+                <label className="text-sm font-medium">Incentivise</label>
+                <Input type="number" min={0} data-testid="input-room-charge-incentivise" {...form.register("incentiviseCharge")} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Monitor</label>
+                <Input type="number" min={0} data-testid="input-room-charge-monitor" {...form.register("monitorCharge")} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Visit</label>
                 <Input type="number" min={0} data-testid="input-room-charge-visit" {...form.register("visitCharge")} />
               </div>
             </div>
@@ -2044,15 +2531,31 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
   const isAdmin = user?.role === 'ADMIN';
   const canManage = isManager || isAdmin;
   const { data: roomTypes } = useRoomTypes();
+  const { data: roomNumbers = [] } = useQuery<any[]>({ queryKey: [api.roomNumbers.list.path] });
+  const { data: patients = [] } = usePatients();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
 
   const switchForm = useForm({
-    defaultValues: { toRoomTypeId: "", isHalfDay: "true", visitDistribution: "old_new", notes: "" }
+    defaultValues: { toRoomTypeId: "", bedNumber: "", switchDate: format(new Date(), "yyyy-MM-dd"), isHalfDay: "true", visitDistribution: "old_new", notes: "" }
   });
 
   const watchIsHalfDay = switchForm.watch("isHalfDay");
+  const watchSwitchRoomTypeId = switchForm.watch("toRoomTypeId");
+  const availableSwitchRooms = useMemo(() => {
+    if (!watchSwitchRoomTypeId) return [];
+    const selectedRoomTypeId = Number(watchSwitchRoomTypeId);
+    const occupiedRoomNumbers = patients
+      .filter((entry: any) => !entry.discharged && entry.id !== patient.id && entry.roomTypeId === selectedRoomTypeId)
+      .map((entry: any) => entry.bedNumber?.trim().toLowerCase())
+      .filter(Boolean);
+
+    return roomNumbers
+      .filter((room: any) => room.roomTypeId === selectedRoomTypeId)
+      .filter((room: any) => !occupiedRoomNumbers.includes(room.number.trim().toLowerCase()))
+      .sort((left: any, right: any) => left.number.localeCompare(right.number, undefined, { numeric: true, sensitivity: "base" }));
+  }, [patient.id, patients, roomNumbers, watchSwitchRoomTypeId]);
 
   const switchMutation = useMutation({
     mutationFn: (data: any) =>
@@ -2061,6 +2564,8 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           toRoomTypeId: parseInt(data.toRoomTypeId),
+          bedNumber: data.bedNumber,
+          switchDate: data.switchDate,
           isHalfDay: data.isHalfDay === "true",
           visitDistribution: data.isHalfDay === "true" ? data.visitDistribution : "old_new",
           notes: data.notes || null,
@@ -2075,7 +2580,7 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
       queryClient.invalidateQueries({ queryKey: [api.patients.get.path, patient.id] });
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
       setOpen(false);
-      switchForm.reset();
+      switchForm.reset({ toRoomTypeId: "", bedNumber: "", switchDate: format(new Date(), "yyyy-MM-dd"), isHalfDay: "true", visitDistribution: "old_new", notes: "" });
       toast({ title: "Room switched", description: "Patient has been moved to the new room." });
     },
     onError: (err: any) => {
@@ -2084,6 +2589,27 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
   });
 
   const onSubmit = (data: any) => switchMutation.mutate(data);
+  const deleteSwitchMutation = useMutation({
+    mutationFn: async (switchId: number) => {
+      const res = await fetch(`/api/patients/${patient.id}/room-switches/${switchId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "Failed to remove room switch");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.patients.getBill.path, patient.id] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.get.path, patient.id] });
+      queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
+      toast({ title: "Deleted", description: "Room switch removed." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
   const currentRoom = roomTypes?.find((r: any) => r.id === patient.roomTypeId);
 
@@ -2108,10 +2634,23 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
               <DialogHeader><DialogTitle>Switch Patient Room</DialogTitle></DialogHeader>
               <Form {...switchForm}>
                 <form onSubmit={switchForm.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField control={switchForm.control} name="switchDate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Switch Date</FormLabel>
+                      <FormControl><Input type="date" {...field} data-testid="input-switch-date" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
                   <FormField control={switchForm.control} name="toRoomTypeId" render={({ field }) => (
                     <FormItem>
                       <FormLabel>New Room</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          switchForm.setValue("bedNumber", "");
+                        }}
+                        value={field.value}
+                      >
                         <FormControl><SelectTrigger data-testid="select-new-room"><SelectValue placeholder="Select new room" /></SelectTrigger></FormControl>
                         <SelectContent>
                           {roomTypes?.filter((r: any) => r.id !== patient.roomTypeId).map((r: any) => (
@@ -2119,6 +2658,30 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
                               {r.name} — ₹{r.dailyCharge}/day
                             </SelectItem>
                           ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={switchForm.control} name="bedNumber" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>New Room Number</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={!watchSwitchRoomTypeId}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-new-room-number">
+                            <SelectValue placeholder={watchSwitchRoomTypeId ? "Select room number" : "Select room type first"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableSwitchRooms.length > 0 ? (
+                            availableSwitchRooms.map((room: any) => (
+                              <SelectItem key={room.id} value={room.number} data-testid={`option-room-number-${room.id}`}>
+                                {room.number}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__none" disabled>No available room numbers</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -2188,6 +2751,7 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
                 <TableHead>To Room</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Doctor Visits</TableHead>
+                {canManage && !patient.discharged && <TableHead className="w-[70px] text-right">Action</TableHead>}
                 <TableHead>Notes</TableHead>
               </TableRow>
             </TableHeader>
@@ -2217,6 +2781,25 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{visitDistLabel}</TableCell>
+                    {canManage && !patient.discharged && (
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          disabled={deleteSwitchMutation.isPending}
+                          onClick={() => {
+                            if (confirm("Remove this room switch? Billing will be recalculated.")) {
+                              deleteSwitchMutation.mutate(sw.id);
+                            }
+                          }}
+                          data-testid={`button-delete-room-switch-${sw.id}`}
+                        >
+                          {deleteSwitchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                        </Button>
+                      </TableCell>
+                    )}
                     <TableCell className="text-muted-foreground">{sw.notes || "—"}</TableCell>
                   </TableRow>
                 );
@@ -2226,6 +2809,57 @@ function RoomSwitchTab({ patient, roomSwitches, isManager }: { patient: any, roo
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ReceiptView({ patient, bill }: { patient: any, bill: any }) {
+  const advanceAmount = bill.advanceAmount ?? patient.advanceAmount ?? 0;
+  const finalAmount = bill.finalAmount ?? ((bill.grandTotal ?? 0) - advanceAmount);
+
+  return (
+    <div className="print-receipt-container">
+      <div className="mx-auto max-w-3xl bg-white text-black">
+        <div className="border-b-2 border-black pb-4 text-center">
+          <h1 className="text-3xl font-bold">Criticare Hospital</h1>
+          <p className="mt-1 text-sm">Advance Payment Receipt</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6 py-6 text-sm">
+          <div className="space-y-2">
+            <p><span className="font-semibold">Patient Name:</span> {patient.name}</p>
+            <p><span className="font-semibold">IPD Number:</span> {patient.ipdNumber || "N/A"}</p>
+            <p><span className="font-semibold">Gender:</span> {patient.gender}</p>
+            <p><span className="font-semibold">Phone:</span> {patient.phone || "N/A"}</p>
+          </div>
+          <div className="space-y-2 text-right">
+            <p><span className="font-semibold">Receipt Date:</span> {format(new Date(), "MMM dd, yyyy")}</p>
+            <p><span className="font-semibold">Admission:</span> {format(new Date(patient.admissionDate), "MMM dd, yyyy")}</p>
+            <p><span className="font-semibold">Room/Bed:</span> {patient.bedNumber || "N/A"}</p>
+            <p><span className="font-semibold">Status:</span> {patient.discharged ? "Discharged" : "Admitted"}</p>
+          </div>
+        </div>
+
+        <div className="border border-black">
+          <div className="flex justify-between border-b border-black px-4 py-3">
+            <span className="font-semibold">Total Bill Amount</span>
+            <span>{formatMoney(bill.grandTotal ?? 0)}</span>
+          </div>
+          <div className="flex justify-between border-b border-black px-4 py-3">
+            <span className="font-semibold">Advance Amount</span>
+            <span>{formatMoney(advanceAmount)}</span>
+          </div>
+          <div className="flex justify-between px-4 py-4 text-lg font-bold">
+            <span>Final Payable Amount</span>
+            <span>{formatMoney(finalAmount)}</span>
+          </div>
+        </div>
+
+        <div className="mt-12 flex justify-between text-sm">
+          <p>Patient/Relative Signature</p>
+          <p>Authorized Signature</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2240,7 +2874,12 @@ type BillTimelineEntry = {
     | "room_charge"
     | "nursing_charge"
     | "rmo_charge"
+    | "incentivise_charge"
+    | "monitor_charge"
     | "visit"
+    | "registration"
+    | "package"
+    | "discount"
     | "extra_charge"
     | "procedure"
     | "surgery"
@@ -2258,14 +2897,19 @@ const BILL_ITEM_TYPE_ORDER: Record<BillTimelineEntry["itemType"], number> = {
   room_charge: 1,
   nursing_charge: 2,
   rmo_charge: 3,
-  visit: 4,
-  extra_charge: 5,
-  procedure: 6,
-  surgery: 7,
-  prosthesis: 8,
-  pharmacy: 9,
-  pathology: 10,
-  radiology: 11,
+  incentivise_charge: 4,
+  monitor_charge: 5,
+  visit: 6,
+  registration: 7,
+  package: 8,
+  discount: 9,
+  extra_charge: 10,
+  procedure: 11,
+  surgery: 12,
+  prosthesis: 13,
+  pharmacy: 14,
+  pathology: 15,
+  radiology: 16,
 };
 
 function sortBillEntriesBySequence(entries: BillTimelineEntry[]) {
@@ -2323,6 +2967,7 @@ function buildBillTimelineEntries(
   roomTypes: any[] | undefined,
   doctors: any[] | undefined,
   medicines: any[] | undefined,
+  assignedDoctors: any[] | undefined,
 ) {
   const entries: BillTimelineEntry[] = [];
   const roomTypeMap = new Map((roomTypes ?? []).map((room) => [room.id, room]));
@@ -2330,56 +2975,106 @@ function buildBillTimelineEntries(
   const medicineMap = new Map((medicines ?? []).map((medicine) => [medicine.id, medicine]));
   const stayDates = getStayDates(patient.admissionDate, bill.daysAdmitted ?? 1);
   const currentRoom = roomTypeMap.get(patient.roomTypeId);
+  const assignedDoctorName = assignedDoctors?.[0]?.doctorName
+    ? formatDoctorName(assignedDoctors[0].doctorName)
+    : undefined;
+  const visibleRoomChargesList = (bill.roomChargesList ?? []).filter((row: any) => row.notes !== EMPTY_ROOM_CONFIGURATION_MARKER);
+  const hasExplicitRoomCharges = visibleRoomChargesList.length > 0 && (bill.roomSwitches?.length ?? 0) === 0;
 
-  if ((bill.roomChargesList?.length ?? 0) > 0) {
-    for (const row of bill.roomChargesList ?? []) {
-      const room = roomTypeMap.get(row.roomTypeId) ?? currentRoom;
-      const rowDetails = room ? room.name : "Room stay";
-      const rowEntries = [
-        { key: "room", title: "Room Charge", amount: row.roomCharge ?? 0, itemType: "room_charge" as const, details: rowDetails },
-        { key: "nursing", title: "Nursing Charge", amount: row.nursingCharge ?? 0, itemType: "nursing_charge" as const, details: rowDetails },
-        { key: "rmo", title: "RMO Charge", amount: row.rmoCharge ?? 0, itemType: "rmo_charge" as const, details: rowDetails },
-        { key: "visit", title: "Visit", amount: row.visitCharge ?? 0, itemType: "visit" as const, details: rowDetails, isDailyVisit: true },
-      ];
+  if ((bill.registrationCharge ?? patient.registrationCharge ?? 400) > 0) {
+    entries.push({
+      id: "registration-charge",
+      date: patient.admissionDate,
+      title: "Registration Charge",
+      details: "Fixed patient registration charge",
+      amount: bill.registrationCharge ?? patient.registrationCharge ?? 400,
+      itemType: "registration",
+    });
+  }
 
-      for (const entry of rowEntries) {
-        if (entry.amount > 0) {
-          entries.push({
-            id: `room-row-${row.id}-${entry.key}`,
-            date: row.date,
-            title: entry.title,
-            details: entry.details,
-            amount: entry.amount,
-            isDailyVisit: entry.isDailyVisit,
-            itemType: entry.itemType,
-          });
-        }
-      }
-    }
-  } else {
-    const syntheticCharges = [
-      { key: "room", title: "Room Charge", total: bill.roomCharge ?? 0, itemType: "room_charge" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge" },
-      { key: "nursing", title: "Nursing Charge", total: bill.roomNursingCharges ?? 0, itemType: "nursing_charge" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge" },
-      { key: "rmo", title: "RMO Charge", total: bill.rmoCharges ?? 0, itemType: "rmo_charge" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge" },
-      { key: "visit", title: "Visit", total: bill.visitCharges ?? 0, itemType: "visit" as const, details: currentRoom ? currentRoom.name : "Auto-calculated stay charge", isDailyVisit: true },
+  if ((bill.packageAmount ?? patient.packageAmount ?? 0) > 0) {
+    entries.push({
+      id: "package-amount",
+      date: patient.admissionDate,
+      title: "Package",
+      details: "Package amount",
+      amount: bill.packageAmount ?? patient.packageAmount ?? 0,
+      itemType: "package",
+    });
+  }
+
+  const addRoomChargeEntries = (row: any, details: string, idBase: string, visitDetails?: string) => {
+    const rowEntries = [
+      { key: "room", title: "Room Charge", amount: row.roomCharge ?? 0, itemType: "room_charge" as const, details },
+      { key: "nursing", title: "Nursing Charge", amount: row.nursingCharge ?? 0, itemType: "nursing_charge" as const, details },
+      { key: "rmo", title: "RMO Charge", amount: row.rmoCharge ?? 0, itemType: "rmo_charge" as const, details },
+      { key: "incentivise", title: "Incentivise Charge", amount: row.incentiviseCharge ?? 0, itemType: "incentivise_charge" as const, details },
+      { key: "monitor", title: "Monitor Charge", amount: row.monitorCharge ?? 0, itemType: "monitor_charge" as const, details },
+      { key: "visit", title: "Doctor Visit", amount: row.visitCharge ?? 0, itemType: "visit" as const, details: visitDetails ?? details, isDailyVisit: true },
     ];
 
-    for (const charge of syntheticCharges) {
-      const amounts = splitAmountAcrossDays(charge.total, stayDates.length);
+    for (const entry of rowEntries) {
+      if (entry.amount > 0) {
+        entries.push({
+          id: `${idBase}-${entry.key}`,
+          date: row.date,
+          title: entry.title,
+          details: entry.details,
+          amount: entry.amount,
+          isDailyVisit: entry.isDailyVisit,
+          itemType: entry.itemType,
+        });
+      }
+    }
+  };
 
-      amounts.forEach((amount, index) => {
-        if (amount > 0) {
-          entries.push({
-            id: `synthetic-${charge.key}-${index}`,
-            date: stayDates[index],
-            title: charge.title,
-            details: charge.details,
-            amount,
-            isDailyVisit: charge.isDailyVisit,
-            itemType: charge.itemType,
-          });
-        }
+  if (hasExplicitRoomCharges) {
+    for (const row of visibleRoomChargesList) {
+      const room = roomTypeMap.get(row.roomTypeId) ?? currentRoom;
+      const roomName = room ? room.name : "Room stay";
+      const visitDetails = assignedDoctorName ? `${assignedDoctorName} | ${roomName}` : roomName;
+      addRoomChargeEntries(row, roomName, `room-row-${row.id}`, visitDetails);
+    }
+  } else {
+    const computedRoomRows = roomTypes?.length
+      ? computeDailyRoomCharges(patient, bill.roomSwitches ?? [], roomTypes, bill.daysAdmitted ?? 1)
+      : [];
+
+    if (computedRoomRows.length > 0) {
+      computedRoomRows.forEach((row: any, index: number) => {
+        const roomName = row.roomTypeName || roomTypeMap.get(row.roomTypeId)?.name || currentRoom?.name || "Room stay";
+        const visitDetails = assignedDoctorName ? `${assignedDoctorName} | ${roomName}` : roomName;
+        addRoomChargeEntries(row, roomName, `computed-room-${index}`, visitDetails);
       });
+    } else {
+      const details = currentRoom ? currentRoom.name : "Auto-calculated stay charge";
+      const visitDetails = assignedDoctorName ? `${assignedDoctorName} | ${details}` : details;
+      const syntheticCharges = [
+        { key: "room", title: "Room Charge", total: bill.roomCharge ?? 0, itemType: "room_charge" as const, details },
+        { key: "nursing", title: "Nursing Charge", total: bill.roomNursingCharges ?? 0, itemType: "nursing_charge" as const, details },
+        { key: "rmo", title: "RMO Charge", total: bill.rmoCharges ?? 0, itemType: "rmo_charge" as const, details },
+        { key: "incentivise", title: "Incentivise Charge", total: bill.incentiviseCharges ?? 0, itemType: "incentivise_charge" as const, details },
+        { key: "monitor", title: "Monitor Charge", total: bill.monitorCharges ?? 0, itemType: "monitor_charge" as const, details },
+        { key: "visit", title: "Doctor Visit", total: bill.visitCharges ?? 0, itemType: "visit" as const, details: visitDetails, isDailyVisit: true },
+      ];
+
+      for (const charge of syntheticCharges) {
+        const amounts = splitAmountAcrossDays(charge.total, stayDates.length);
+
+        amounts.forEach((amount, index) => {
+          if (amount > 0) {
+            entries.push({
+              id: `synthetic-${charge.key}-${index}`,
+              date: stayDates[index],
+              title: charge.title,
+              details: charge.details,
+              amount,
+              isDailyVisit: charge.isDailyVisit,
+              itemType: charge.itemType,
+            });
+          }
+        });
+      }
     }
   }
 
@@ -2388,8 +3083,8 @@ function buildBillTimelineEntries(
     entries.push({
       id: `visit-${visit.id}`,
       date: visit.date,
-      title: "Visit",
-      details: doctor ? `Dr. ${doctor.name}` : `Doctor #${visit.doctorId}`,
+      title: "Doctor Visit",
+      details: doctor ? formatDoctorName(doctor.name) : `Doctor #${visit.doctorId}`,
       amount: visit.charge ?? 0,
       itemType: "visit",
     });
@@ -2421,7 +3116,7 @@ function buildBillTimelineEntries(
 
     const chargeTitle =
       charge.type === "PROSTHESIS"
-        ? "Prosthesis (Implant / Stent)"
+        ? "Prosthesis"
         : charge.type === "PATHOLOGY"
           ? "Pathology"
             : charge.type === "RADIOLOGY"
@@ -2434,7 +3129,7 @@ function buildBillTimelineEntries(
       id: `charge-${charge.id}`,
       date: charge.date,
       title: chargeTitle,
-      details: charge.description || undefined,
+      details: charge.description?.trim() || chargeTitle,
       amount: charge.amount ?? 0,
       itemType: chargeItemType,
     });
@@ -2446,7 +3141,7 @@ function buildBillTimelineEntries(
       id: `procedure-${procedure.id}`,
       date: procedure.date,
       title: "Procedure",
-      details: [procedure.name, procedure.description, doctor ? `Dr. ${doctor.name}` : undefined]
+      details: [procedure.name, procedure.description, doctor ? formatDoctorName(doctor.name) : undefined]
         .filter(Boolean)
         .join(" | "),
       amount: procedure.cost ?? 0,
@@ -2461,7 +3156,10 @@ function buildBillTimelineEntries(
       (surgery.assistantSurgeonCharge ?? 0) +
       (surgery.anaesthetistCharge ?? 0) +
       (surgery.otCharge ?? 0) +
-      (surgery.otAssistantCharge ?? 0);
+      (surgery.otAssistantCharge ?? 0) +
+      (surgery.armLaminarCharge ?? 0) +
+      (surgery.airFlowSterilisationCharge ?? 0) +
+      (surgery.gaksCharge ?? 0);
 
     const breakdown = [
       surgery.surgeryCharge ? `Features ${formatMoney(surgery.surgeryCharge)}` : null,
@@ -2470,6 +3168,9 @@ function buildBillTimelineEntries(
       surgery.anaesthetistCharge ? `Anaesthetist ${formatMoney(surgery.anaesthetistCharge)}` : null,
       surgery.otCharge ? `OT ${formatMoney(surgery.otCharge)}` : null,
       surgery.otAssistantCharge ? `OT Assistant ${formatMoney(surgery.otAssistantCharge)}` : null,
+      surgery.armLaminarCharge ? `Arm Laminar ${formatMoney(surgery.armLaminarCharge)}` : null,
+      surgery.airFlowSterilisationCharge ? `Air Flow Sterilisation ${formatMoney(surgery.airFlowSterilisationCharge)}` : null,
+      surgery.gaksCharge ? `GAKS ${formatMoney(surgery.gaksCharge)}` : null,
     ]
       .filter(Boolean)
       .join(" | ");
@@ -2478,9 +3179,21 @@ function buildBillTimelineEntries(
       id: `surgery-${surgery.id}`,
       date: surgery.date,
       title: "Surgery",
-      details: [surgery.surgeryName, breakdown].filter(Boolean).join(" | "),
+      details: [surgery.surgeryName, breakdown].filter(Boolean).join(" | ") || "Surgery charges",
       amount: surgeryTotal,
       itemType: "surgery",
+    });
+  }
+
+  if ((bill.discountAmount ?? patient.discountAmount ?? 0) > 0) {
+    const discountType = bill.discountType ?? patient.discountType;
+    entries.push({
+      id: "discount",
+      date: patient.expectedDischargeDate ?? patient.admissionDate,
+      title: "Discount",
+      details: discountType === "TRUST" ? "Trust discount" : "Self discount",
+      amount: -(bill.discountAmount ?? patient.discountAmount ?? 0),
+      itemType: "discount",
     });
   }
 
@@ -2593,32 +3306,120 @@ function DateWiseBillGroups({ entries }: { entries: BillTimelineEntry[] }) {
   );
 }
 
+type SummarisedBillRow = {
+  key: string;
+  item: string;
+  details: string;
+  count: number;
+  amount: number;
+  itemType: BillTimelineEntry["itemType"];
+};
+
+function buildSummarisedBillRows(entries: BillTimelineEntry[]): SummarisedBillRow[] {
+  const rowMap = new Map<string, SummarisedBillRow>();
+
+  for (const entry of entries) {
+    const details = entry.details || "-";
+    const key = `${entry.itemType}::${entry.title}::${details}`;
+    const existing = rowMap.get(key);
+
+    if (existing) {
+      existing.count += 1;
+      existing.amount += entry.amount;
+      continue;
+    }
+
+    rowMap.set(key, {
+      key,
+      item: entry.title,
+      details,
+      count: 1,
+      amount: entry.amount,
+      itemType: entry.itemType,
+    });
+  }
+
+  return Array.from(rowMap.values()).sort((left, right) => {
+    const typeDiff = BILL_ITEM_TYPE_ORDER[left.itemType] - BILL_ITEM_TYPE_ORDER[right.itemType];
+    if (typeDiff !== 0) return typeDiff;
+    const itemDiff = left.item.localeCompare(right.item);
+    if (itemDiff !== 0) return itemDiff;
+    return left.details.localeCompare(right.details);
+  });
+}
+
+function SummarisedBillTable({ entries }: { entries: BillTimelineEntry[] }) {
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-8">No bill line items available yet.</p>;
+  }
+
+  const rows = buildSummarisedBillRows(entries);
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-[220px]">Item</TableHead>
+          <TableHead>Details</TableHead>
+          <TableHead className="text-right">Number</TableHead>
+          <TableHead className="text-right">Final Amount</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.key}>
+            <TableCell className="font-medium">{row.item}</TableCell>
+            <TableCell className="text-muted-foreground">{row.details}</TableCell>
+            <TableCell className="text-right">{row.count}</TableCell>
+            <TableCell className="text-right font-semibold text-primary">{formatMoney(row.amount)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 function BillView({
   patient,
   bill,
   mode,
   onModeChange,
+  onPrint,
   printMode = false,
 }: {
   patient: any,
   bill: any,
   mode: BillDisplayMode,
   onModeChange: (mode: BillDisplayMode) => void,
+  onPrint?: () => void,
   printMode?: boolean
 }) {
   const { data: doctors } = useDoctors();
   const { data: medicines } = useMedicines();
   const { data: roomTypes } = useRoomTypes();
-  const entries = buildBillTimelineEntries(patient, bill, roomTypes, doctors, medicines);
+  const { data: assignedDoctors } = useAssignedDoctors(patient.id);
+  const entries = buildBillTimelineEntries(patient, bill, roomTypes, doctors, medicines, assignedDoctors);
+  const advanceAmount = bill.advanceAmount ?? patient.advanceAmount ?? 0;
+  const finalAmount = bill.finalAmount ?? ((bill.grandTotal ?? 0) - advanceAmount);
+  const billModeTitle: Record<BillDisplayMode, string> = {
+    summarised: "Summarised Bill",
+    progressive: "Progressive Bill",
+    "date-wise": "Date-wise Bill",
+  };
+  const billModeDescription: Record<BillDisplayMode, string> = {
+    summarised: "Bill items grouped by item and details with count and final amount.",
+    progressive: "Every bill item in one running list with its date.",
+    "date-wise": "Each date followed by all billable activity recorded on that day.",
+  };
 
   return (
     <Card className={`border-border/50 shadow-md ${printMode ? 'border-none shadow-none' : ''}`}>
-      <CardHeader className="text-center border-b pb-6 mb-4">
-        <h2 className="text-3xl font-display font-bold text-primary">Criticare Hospital</h2>
+      <CardHeader className={`text-center border-b ${printMode ? 'pb-3 mb-3' : 'pb-6 mb-4'}`}>
+        <h2 className={`${printMode ? 'text-2xl' : 'text-3xl'} font-display font-bold text-primary`}>Criticare Hospital</h2>
         <p className="text-muted-foreground">Official IPD Final Bill</p>
       </CardHeader>
-      <CardContent className="space-y-8 p-8 pt-0">
-        <div className="grid grid-cols-2 gap-8 text-sm">
+      <CardContent className={`${printMode ? 'space-y-4 p-4 pt-0' : 'space-y-8 p-8 pt-0'}`}>
+        <div className={`grid grid-cols-2 ${printMode ? 'gap-3 border border-border p-3 text-xs' : 'gap-8 text-sm'}`}>
           <div>
             <p><span className="font-semibold w-24 inline-block">Patient Name:</span> {patient.name}</p>
             <p><span className="font-semibold w-24 inline-block">IPD Number:</span> {patient.ipdNumber}</p>
@@ -2712,43 +3513,62 @@ function BillView({
         </div>
         )}
 
-        <div className="border-t border-border/50 pt-6">
-          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className={`${printMode ? 'border border-border p-3' : 'border-t border-border/50 pt-6'}`}>
+          <div className={`${printMode ? 'mb-3' : 'mb-5'} flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`}>
             <div>
               <h3 className="font-display font-semibold text-lg">
-                {mode === "progressive" ? "Progressive Bill" : "Date-wise Bill"}
+                {billModeTitle[mode]}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {mode === "progressive"
-                  ? "Every bill item in one running list with its date."
-                  : "Each date followed by all billable activity recorded on that day."}
+                {billModeDescription[mode]}
               </p>
             </div>
 
             {!printMode && (
-              <Tabs value={mode} onValueChange={(value) => onModeChange(value as BillDisplayMode)}>
-                <TabsList className="grid w-full grid-cols-2 sm:w-[320px]">
-                  <TabsTrigger value="progressive">Progressive Bill</TabsTrigger>
-                  <TabsTrigger value="date-wise">Date-wise Bill</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <div className="flex flex-col gap-2 sm:items-end">
+                <Tabs value={mode} onValueChange={(value) => onModeChange(value as BillDisplayMode)}>
+                  <TabsList className="grid w-full grid-cols-3 sm:w-[480px]">
+                    <TabsTrigger value="summarised">Summarised Bill</TabsTrigger>
+                    <TabsTrigger value="progressive">Progressive Bill</TabsTrigger>
+                    <TabsTrigger value="date-wise">Date-wise Bill</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <Button type="button" variant="outline" size="sm" className="gap-2" onClick={onPrint}>
+                  <Printer className="h-4 w-4" />
+                  Print {billModeTitle[mode]}
+                </Button>
+              </div>
             )}
           </div>
 
-          {mode === "progressive" ? (
+          {mode === "summarised" ? (
+            <SummarisedBillTable entries={entries} />
+          ) : mode === "progressive" ? (
             <ProgressiveBillTable entries={entries} />
           ) : (
             <DateWiseBillGroups entries={entries} />
           )}
 
-          <div className="mt-6 flex items-center justify-between rounded-2xl border border-border/60 bg-secondary/20 px-5 py-4">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Grand Total</p>
-              <p className="text-sm text-muted-foreground">
-                {bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""} admitted
-              </p>
+          <div className={`${printMode ? 'mt-3 border border-border bg-secondary/20 px-3 py-2' : 'mt-6 rounded-2xl border border-border/60 bg-secondary/20 px-5 py-4'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Grand Total</p>
+                <p className="text-sm text-muted-foreground">
+                  {bill.daysAdmitted} day{bill.daysAdmitted !== 1 ? "s" : ""} admitted
+                </p>
+              </div>
+              <p className="text-2xl font-bold text-primary">{formatMoney(bill.grandTotal)}</p>
             </div>
-            <p className="text-2xl font-bold text-primary">{formatMoney(bill.grandTotal)}</p>
+            <div className="mt-4 space-y-2 border-t border-border/60 pt-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Advance Paid</span>
+                <span className="font-semibold text-emerald-700">-{formatMoney(advanceAmount)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-display font-semibold text-primary">Final Payable</span>
+                <span className="text-2xl font-bold text-primary">{formatMoney(finalAmount)}</span>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -2761,3 +3581,7 @@ function BillView({
     </Card>
   );
 }
+
+
+
+

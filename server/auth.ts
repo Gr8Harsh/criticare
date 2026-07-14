@@ -5,11 +5,11 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { type User } from "@shared/schema";
+import { type User as SchemaUser } from "@shared/schema";
 
 declare global {
   namespace Express {
-    interface User extends import("@shared/schema").User {}
+    interface User extends SchemaUser {}
   }
 }
 
@@ -30,15 +30,22 @@ async function comparePasswords(supplied: string, stored: string) {
 
 export function setupAuth(app: Express) {
   const isProduction = process.env.NODE_ENV === "production";
+  const sessionSecret = process.env.SESSION_SECRET || process.env.REPLIT_ID;
+  const useSecureCookies = process.env.SESSION_SECURE === "true";
+
+  if (isProduction && !sessionSecret) {
+    throw new Error("SESSION_SECRET must be set in production");
+  }
+
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPLIT_ID || "ipd-secret",
+    secret: sessionSecret || "ipd-dev-secret",
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      secure: isProduction,
+      secure: useSecureCookies,
       httpOnly: true,
-      sameSite: isProduction ? "none" : "lax",
+      sameSite: useSecureCookies ? "none" : "lax",
       maxAge: 1000 * 60 * 60 * 24 * 7
     }
   };
@@ -50,51 +57,41 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy({ usernameField: "email" }, async (email, password, done) => {
       try {
-        console.log("---- LOGIN ATTEMPT ----");
-        console.log("Email entered:", email);
-        console.log("Password entered:", password);
-
         const user = await storage.getUserByEmail(email);
 
-        console.log("User from DB:", user);
-
         if (!user) {
-          console.log("User NOT found");
           return done(null, false);
         }
-
-        console.log("Stored password:", user.password);
 
         const isValid = await comparePasswords(password, user.password);
 
-        console.log("Password match result:", isValid);
-
         if (!isValid) {
-          console.log("Password did NOT match");
           return done(null, false);
         }
 
-        console.log("Login success");
         return done(null, user);
       } catch (err) {
-        console.log("ERROR:", err);
         return done(err);
       }
     }),
   );
   passport.serializeUser((user, done) => done(null, user.id));
 
-  passport.deserializeUser(async (id: number, done) => {
+  passport.deserializeUser(async (id, done) => {
     try {
-      const user = await storage.getUser(id);
+      const user = await storage.getUser(Number(id));
       done(null, user);
     } catch (err) {
       done(err);
     }
   });
 
-  // Seed demo users if not exists
+  // Seed demo users only for local development unless explicitly enabled.
   (async () => {
+    if (isProduction && process.env.ENABLE_DEMO_USERS !== "true") {
+      return;
+    }
+
     const demoUsers = [
       {
         email: "admin@test.com",

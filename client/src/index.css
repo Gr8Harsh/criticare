@@ -86,22 +86,127 @@
 }
 
 /* Print Styles */
+@page {
+  size: A4;
+  margin: 10mm;
+}
+
 @media print {
+  html,
+  body {
+    width: 210mm;
+    min-height: 297mm;
+    background: white !important;
+  }
+
   body * {
     visibility: hidden;
   }
-  .print-bill-container, .print-bill-container * {
+  body.printing-receipt .print-receipt-container,
+  body.printing-receipt .print-receipt-container *,
+  body.printing-bill .print-bill-container,
+  body.printing-bill .print-bill-container * {
     visibility: visible;
   }
-  .print-bill-container {
+  body.printing-receipt .print-receipt-container,
+  body.printing-bill .print-bill-container {
+    display: block !important;
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
-    padding: 2rem;
-    background: white;
+    padding: 0;
+    background: white !important;
+    color: black !important;
+    font-size: 11px;
+    line-height: 1.25;
   }
+
+  body.printing-bill .print-bill-container > * {
+    width: 190mm;
+    min-height: 277mm;
+    margin: 0 auto;
+    border: 1px solid #111 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  body.printing-bill .print-bill-container [class*="p-8"] {
+    padding: 12px !important;
+  }
+
+  body.printing-bill .print-bill-container [class*="space-y-8"] > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 12px !important;
+  }
+
+  body.printing-bill .print-bill-container [class*="rounded"],
+  body.printing-bill .print-bill-container [class*="shadow"] {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body.printing-bill .print-bill-container h2 {
+    font-size: 22px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.printing-bill .print-bill-container h3,
+  body.printing-bill .print-bill-container h4 {
+    font-size: 14px !important;
+    line-height: 1.15 !important;
+  }
+
+  body.printing-bill .print-bill-container table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  body.printing-bill .print-bill-container thead {
+    display: table-header-group;
+  }
+
+  body.printing-bill .print-bill-container tr {
+    page-break-inside: avoid;
+  }
+
+  body.printing-bill .print-bill-container th,
+  body.printing-bill .print-bill-container td {
+    border: 1px solid #333 !important;
+    padding: 4px 6px !important;
+    color: black !important;
+    vertical-align: top;
+  }
+
+  body.printing-bill .print-bill-container th {
+    background: #e9efec !important;
+    font-weight: 700 !important;
+  }
+
+  body.printing-bill .print-bill-container .text-muted-foreground,
+  body.printing-bill .print-bill-container .text-primary {
+    color: black !important;
+  }
+
+  body.printing-bill .print-bill-container .bg-secondary\/20,
+  body.printing-bill .print-bill-container .bg-secondary\/30,
+  body.printing-bill .print-bill-container .bg-primary\/10 {
+    background: #f3f6f4 !important;
+  }
+
+  body.printing-bill .print-bill-container .border-t,
+  body.printing-bill .print-bill-container .border-b,
+  body.printing-bill .print-bill-container .border {
+    border-color: #111 !important;
+  }
+
   .no-print {
     display: none !important;
   }
+}
+
+.print-receipt-container,
+.print-bill-container {
+  display: none;
 }

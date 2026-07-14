@@ -31,7 +31,9 @@ export default function MedicinesList() {
 
   const filteredMeds = medicines?.filter(m => m.name.toLowerCase().includes(search.toLowerCase()));
 
-  if (user?.role !== 'MANAGER') return <div>Unauthorized</div>;
+  const canManageMedicines = user?.role === 'MANAGER' || user?.role === 'ADMIN';
+
+  if (!canManageMedicines) return <div>Unauthorized</div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { index, json, pgTable, text, serial, integer, boolean, timestamp, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -10,13 +10,29 @@ export const users = pgTable("users", {
   role: text("role").notNull(), // 'ADMIN', 'MANAGER', or 'DOCTOR'
 });
 
+export const session = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
+}, (table) => ({
+  expireIdx: index("IDX_session_expire").on(table.expire),
+}));
+
 export const roomTypes = pgTable("room_types", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   dailyCharge: integer("daily_charge").notNull(),
   nursingCharge: integer("nursing_charge").notNull().default(0),
   rmoCharge: integer("rmo_charge").notNull().default(0),
+  incentiviseCharge: integer("incentivise_charge").notNull().default(0),
+  monitorCharge: integer("monitor_charge").notNull().default(0),
   visitCharge: integer("visit_charge").notNull().default(0),
+});
+
+export const roomNumbers = pgTable("room_numbers", {
+  id: serial("id").primaryKey(),
+  roomTypeId: integer("room_type_id").notNull(),
+  number: text("number").notNull(),
 });
 
 export const patients = pgTable("patients", {
@@ -32,6 +48,12 @@ export const patients = pgTable("patients", {
   expectedDischargeDate: timestamp("expected_discharge_date"),
   roomTypeId: integer("room_type_id").notNull(),
   bedNumber: text("bed_number").notNull(),
+  advanceAmount: integer("advance_amount").notNull().default(0),
+  discountAmount: integer("discount_amount").notNull().default(0),
+  discountType: text("discount_type"),
+  packageAmount: integer("package_amount").notNull().default(0),
+  registrationCharge: integer("registration_charge").notNull().default(400),
+  halfDayDischarge: boolean("half_day_discharge").default(false).notNull(),
   discharged: boolean("discharged").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -140,6 +162,9 @@ export const patientSurgeries = pgTable("patient_surgeries", {
   anaesthetistCharge: integer("anaesthetist_charge").notNull().default(0),
   otCharge: integer("ot_charge").notNull().default(0),
   otAssistantCharge: integer("ot_assistant_charge").notNull().default(0),
+  armLaminarCharge: integer("arm_laminar_charge").notNull().default(0),
+  airFlowSterilisationCharge: integer("air_flow_sterilisation_charge").notNull().default(0),
+  gaksCharge: integer("gaks_charge").notNull().default(0),
 });
 
 export const doctorRoomCharges = pgTable("doctor_room_charges", {
@@ -169,12 +194,15 @@ export const patientRoomCharges = pgTable("patient_room_charges", {
   roomCharge: integer("room_charge").notNull().default(0),
   nursingCharge: integer("nursing_charge").notNull().default(0),
   rmoCharge: integer("rmo_charge").notNull().default(0),
+  incentiviseCharge: integer("incentivise_charge").notNull().default(0),
+  monitorCharge: integer("monitor_charge").notNull().default(0),
   visitCharge: integer("visit_charge").notNull().default(0),
   notes: text("notes"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertRoomTypeSchema = createInsertSchema(roomTypes).omit({ id: true });
+export const insertRoomNumberSchema = createInsertSchema(roomNumbers).omit({ id: true });
 export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true }).extend({
   ipdNumber: z.string().optional().nullable(),
 });
@@ -198,6 +226,7 @@ export const insertPatientRoomChargeSchema = createInsertSchema(patientRoomCharg
 // Types
 export type User = typeof users.$inferSelect;
 export type RoomType = typeof roomTypes.$inferSelect;
+export type RoomNumber = typeof roomNumbers.$inferSelect;
 export type Patient = typeof patients.$inferSelect;
 export type Doctor = typeof doctors.$inferSelect;
 export type PatientDoctor = typeof patientDoctors.$inferSelect;
@@ -222,6 +251,7 @@ export type InsertDoctorSurgeryCharge = z.infer<typeof insertDoctorSurgeryCharge
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertRoomType = z.infer<typeof insertRoomTypeSchema>;
+export type InsertRoomNumber = z.infer<typeof insertRoomNumberSchema>;
 export type InsertPatient = z.infer<typeof insertPatientSchema>;
 export type InsertDoctor = z.infer<typeof insertDoctorSchema>;
 export type InsertPatientDoctor = z.infer<typeof insertPatientDoctorSchema>;

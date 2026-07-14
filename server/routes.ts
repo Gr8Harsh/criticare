@@ -115,6 +115,32 @@ export async function registerRoutes(
     res.json(allUsers.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })));
   });
 
+  app.post("/api/admin/users/:id/reset-password", requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { password } = z.object({ password: z.string().min(6) }).parse(req.body);
+      const [account] = await db.select().from(users).where(eq(users.id, id));
+
+      if (!account) return res.status(404).json({ message: "User not found" });
+      if (!["MANAGER", "DOCTOR"].includes(account.role)) {
+        return res.status(400).json({ message: "Only manager and doctor passwords can be reset here" });
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set({ password: await hashPassword(password) })
+        .where(eq(users.id, id))
+        .returning({ id: users.id, name: users.name, email: users.email, role: users.role });
+
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.post("/api/admin/room-types/:id", requireAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -122,6 +148,8 @@ export async function registerRoutes(
         dailyCharge: z.coerce.number().optional(),
         nursingCharge: z.coerce.number().optional(),
         rmoCharge: z.coerce.number().optional(),
+        incentiviseCharge: z.coerce.number().optional(),
+        monitorCharge: z.coerce.number().optional(),
         visitCharge: z.coerce.number().optional(),
       }).parse(req.body);
       const [updated] = await db.update(roomTypes).set(fields).where(eq(roomTypes.id, id)).returning();
@@ -136,9 +164,18 @@ export async function registerRoutes(
     res.json(patients);
   });
 
-  app.post(api.patients.create.path, async (req, res) => {
+  app.post(api.patients.create.path, requireManager, async (req, res) => {
     try {
-      const { doctorId, ...patientData } = req.body;
+      const { doctorId, ...patientData } = api.patients.create.input
+        .extend({ doctorId: z.coerce.number().optional() })
+        .parse(req.body);
+      const normalizedIpd = patientData.ipdNumber?.trim();
+      if (normalizedIpd) {
+        const existingPatient = (await storage.getPatients()).find((patient) => patient.ipdNumber === normalizedIpd);
+        if (existingPatient) {
+          return res.status(400).json({ message: "IPD number already exists" });
+        }
+      }
       const patient = await storage.createPatient({ ...patientData, doctorId });
       res.status(201).json(patient);
     } catch (err) {
@@ -169,7 +206,15 @@ export async function registerRoutes(
   app.put(api.patients.update.path, async (req, res) => {
     try {
       const input = api.patients.update.input.parse(req.body);
-      const patient = await storage.updatePatient(Number(req.params.id), input);
+      const patientId = Number(req.params.id);
+      const normalizedIpd = input.ipdNumber?.trim();
+      if (normalizedIpd) {
+        const existingPatient = (await storage.getPatients()).find((patient) => patient.ipdNumber === normalizedIpd && patient.id !== patientId);
+        if (existingPatient) {
+          return res.status(400).json({ message: "IPD number already exists" });
+        }
+      }
+      const patient = await storage.updatePatient(patientId, input);
       if (!patient) return res.status(404).json({ message: "Patient not found" });
       res.json(patient);
     } catch (err) {
@@ -180,10 +225,19 @@ export async function registerRoutes(
   });
 
   app.post(api.patients.discharge.path, async (req, res) => {
+    const body = z.object({
+      dischargeDate: z.string().optional(),
+      dischargeTime: z.string().optional(),
+      halfDayDischarge: z.boolean().optional(),
+    }).parse(req.body ?? {});
+    const dischargeDateTime = body.dischargeDate
+      ? new Date(`${body.dischargeDate}T${body.dischargeTime || "00:00"}`)
+      : new Date();
     const patient = await storage.updatePatient(Number(req.params.id), {
       discharged: true,
-      expectedDischargeDate: new Date(),
-    });
+      expectedDischargeDate: dischargeDateTime,
+      halfDayDischarge: body.halfDayDischarge ?? false,
+    } as any);
     if (!patient) return res.status(404).json({ message: "Patient not found" });
     res.json(patient);
   });
@@ -209,7 +263,7 @@ export async function registerRoutes(
 
     chargesList.forEach((c) => {
       if (c.type === "NURSING") nursingCharges += c.amount;
-      else if (c.type === "OTHER") otherCharges += c.amount;
+      else otherCharges += c.amount;
     });
 
     const admissionDate = new Date(patient.admissionDate);
@@ -228,24 +282,29 @@ export async function registerRoutes(
     let roomCharge = 0;
     let roomNursingCharges = 0;
     let rmoCharges = 0;
+    let incentiviseCharges = 0;
+    let monitorCharges = 0;
     let visitCharges = 0;
 
     // Fetch explicit per-day room charges
     const roomChargesList = await storage.getPatientRoomCharges(patientId);
+    const visibleRoomChargesList = roomChargesList.filter((rc) => rc.notes !== "__EMPTY_ROOM_CONFIGURATION__");
+    const switches = await storage.getRoomSwitchesByPatient(patientId);
+    switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
 
-    if (roomChargesList.length > 0) {
+    if (visibleRoomChargesList.length > 0 && switches.length === 0) {
       // Use explicit per-day entries
-      roomChargesList.forEach((rc) => {
+      visibleRoomChargesList.forEach((rc) => {
         roomCharge += rc.roomCharge;
         roomNursingCharges += rc.nursingCharge;
         rmoCharges += rc.rmoCharge;
+        incentiviseCharges += (rc as any).incentiviseCharge ?? 0;
+        monitorCharges += (rc as any).monitorCharge ?? 0;
         visitCharges += (rc.visitCharge ?? 0);
       });
     } else {
       // Auto-calculate from room type and room switches
       const allRoomTypes = await storage.getRoomTypes();
-      const switches = await storage.getRoomSwitchesByPatient(patientId);
-      switches.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
 
       // Adds room/nursing/rmo charges for a number of days (visit charge handled separately for switch days)
       const addSegmentCharges = (roomTypeId: number, days: number, includeVisit = true) => {
@@ -255,6 +314,8 @@ export async function registerRoutes(
         roomCharge += days * rt.dailyCharge;
         roomNursingCharges += days * (rt.nursingCharge ?? 0);
         rmoCharges += days * (rt.rmoCharge ?? 0);
+        incentiviseCharges += days * ((rt as any).incentiviseCharge ?? 0);
+        monitorCharges += days * ((rt as any).monitorCharge ?? 0);
         if (includeVisit) visitCharges += days * 2 * (rt.visitCharge ?? 0);
       };
 
@@ -267,7 +328,7 @@ export async function registerRoutes(
         Math.round((b.getTime() - a.getTime()) / (1000 * 3600 * 24));
 
       if (switches.length === 0) {
-        addSegmentCharges(patient.roomTypeId, daysAdmitted);
+        addSegmentCharges(patient.roomTypeId, (patient as any).halfDayDischarge ? 0.5 : daysAdmitted);
       } else {
         let prevDay = toMidnight(admissionDate);
         const dischargeDay = toMidnight(dischargeDate);
@@ -295,7 +356,10 @@ export async function registerRoutes(
             prevDay = nextDay;
           } else {
             addSegmentCharges(prevRoomTypeId, diffDays);
-            prevDay = switchDay;
+            const nextDay = new Date(switchDay);
+            nextDay.setDate(nextDay.getDate() + 1);
+            prevDay = nextDay;
+            addSegmentCharges(sw.toRoomTypeId, 1);
           }
           prevRoomTypeId = sw.toRoomTypeId;
           lastRoomTypeId = sw.toRoomTypeId;
@@ -309,6 +373,8 @@ export async function registerRoutes(
       roomCharge = Math.round(roomCharge);
       roomNursingCharges = Math.round(roomNursingCharges);
       rmoCharges = Math.round(rmoCharges);
+      incentiviseCharges = Math.round(incentiviseCharges);
+      monitorCharges = Math.round(monitorCharges);
       visitCharges = Math.round(visitCharges);
     }
 
@@ -317,12 +383,22 @@ export async function registerRoutes(
     const surgeriesList = await storage.getPatientSurgeries(patientId);
     const surgeryCharges = surgeriesList.reduce((acc, s) =>
       acc + s.surgeryCharge + s.surgeonCharge + s.assistantSurgeonCharge +
-      s.anaesthetistCharge + s.otCharge + s.otAssistantCharge, 0);
+      s.anaesthetistCharge + s.otCharge + s.otAssistantCharge +
+      ((s as any).armLaminarCharge ?? 0) + ((s as any).airFlowSterilisationCharge ?? 0) + ((s as any).gaksCharge ?? 0), 0);
+
+    const registrationCharge = (patient as any).registrationCharge ?? 400;
+    const packageAmount = (patient as any).packageAmount ?? 0;
+    const discountAmount = (patient as any).discountAmount ?? 0;
+    const discountType = (patient as any).discountType ?? null;
 
     const grandTotal =
+      registrationCharge +
+      packageAmount +
       roomCharge +
       roomNursingCharges +
       rmoCharges +
+      incentiviseCharges +
+      monitorCharges +
       visitCharges +
       doctorCharges +
       medicineCharges +
@@ -330,6 +406,8 @@ export async function registerRoutes(
       otherCharges +
       procedureCharges +
       surgeryCharges;
+    const advanceAmount = patient.advanceAmount ?? 0;
+    const finalAmount = grandTotal - advanceAmount - discountAmount;
 
     const roomSwitchesList = await storage.getRoomSwitchesByPatient(patientId);
     roomSwitchesList.sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
@@ -339,7 +417,13 @@ export async function registerRoutes(
       roomCharge,
       roomNursingCharges,
       rmoCharges,
+      incentiviseCharges,
+      monitorCharges,
       visitCharges,
+      registrationCharge,
+      packageAmount,
+      discountAmount,
+      discountType,
       doctorCharges,
       medicineCharges,
       nursingCharges,
@@ -347,6 +431,8 @@ export async function registerRoutes(
       procedureCharges,
       surgeryCharges,
       grandTotal,
+      advanceAmount,
+      finalAmount,
       visits,
       prescriptions,
       charges: chargesList,
@@ -372,8 +458,11 @@ export async function registerRoutes(
       if (!patient) return res.status(404).json({ message: "Patient not found" });
       if (patient.discharged) return res.status(400).json({ message: "Cannot switch room for a discharged patient" });
 
-      const { toRoomTypeId, isHalfDay, visitDistribution, notes } = req.body;
+      const { toRoomTypeId, bedNumber, isHalfDay, visitDistribution, switchDate, notes } = req.body;
       if (!toRoomTypeId) return res.status(400).json({ message: "toRoomTypeId is required" });
+      if (!bedNumber || typeof bedNumber !== "string" || !bedNumber.trim()) {
+        return res.status(400).json({ message: "Room number is required" });
+      }
       if (patient.roomTypeId === Number(toRoomTypeId)) return res.status(400).json({ message: "Patient is already in this room type" });
 
       const halfDay = isHalfDay !== false;
@@ -381,14 +470,44 @@ export async function registerRoutes(
         patientId,
         fromRoomTypeId: patient.roomTypeId,
         toRoomTypeId: Number(toRoomTypeId),
+        switchDate: switchDate ? new Date(switchDate) : new Date(),
         isHalfDay: halfDay,
         visitDistribution: halfDay ? (visitDistribution ?? "old_new") : "old_new",
         notes: notes || null,
       });
 
-      await storage.updatePatient(patientId, { roomTypeId: Number(toRoomTypeId) });
+      await storage.updatePatient(patientId, {
+        roomTypeId: Number(toRoomTypeId),
+        bedNumber: bedNumber.trim(),
+      });
 
       res.status(201).json(sw);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete('/api/patients/:id/room-switches/:switchId', async (req, res) => {
+    try {
+      const patientId = Number(req.params.id);
+      const switchId = Number(req.params.switchId);
+      const patient = await storage.getPatient(patientId);
+      if (!patient) return res.status(404).json({ message: "Patient not found" });
+
+      const switches = await storage.getRoomSwitchesByPatient(patientId);
+      const switchToDelete = switches.find((sw) => sw.id === switchId);
+      if (!switchToDelete) return res.status(404).json({ message: "Room switch not found" });
+
+      await storage.deleteRoomSwitch(switchId);
+
+      const remainingSwitches = (await storage.getRoomSwitchesByPatient(patientId))
+        .sort((a, b) => new Date(a.switchDate).getTime() - new Date(b.switchDate).getTime());
+      const newRoomTypeId = remainingSwitches.length > 0
+        ? remainingSwitches[remainingSwitches.length - 1].toRoomTypeId
+        : switchToDelete.fromRoomTypeId;
+      await storage.updatePatient(patientId, { roomTypeId: newRoomTypeId });
+
+      res.json({ message: "Deleted" });
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
     }
@@ -406,7 +525,7 @@ export async function registerRoutes(
       const patientId = Number(req.params.id);
       const patient = await storage.getPatient(patientId);
       if (!patient) return res.status(404).json({ message: "Patient not found" });
-      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, visitCharge, notes } = req.body;
+      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, incentiviseCharge, monitorCharge, visitCharge, notes } = req.body;
       const row = await storage.createPatientRoomCharge({
         patientId,
         date: new Date(date),
@@ -414,9 +533,11 @@ export async function registerRoutes(
         roomCharge: Number(roomCharge ?? 0),
         nursingCharge: Number(nursingCharge ?? 0),
         rmoCharge: Number(rmoCharge ?? 0),
+        incentiviseCharge: Number(incentiviseCharge ?? 0),
+        monitorCharge: Number(monitorCharge ?? 0),
         visitCharge: Number(visitCharge ?? 0),
         notes: notes || null,
-      });
+      } as any);
       res.status(201).json(row);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -426,16 +547,18 @@ export async function registerRoutes(
   app.put('/api/patients/:id/room-charges/:chargeId', async (req, res) => {
     try {
       const id = Number(req.params.chargeId);
-      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, visitCharge, notes } = req.body;
+      const { date, roomTypeId, roomCharge, nursingCharge, rmoCharge, incentiviseCharge, monitorCharge, visitCharge, notes } = req.body;
       const row = await storage.updatePatientRoomCharge(id, {
         date: date ? new Date(date) : undefined,
         roomTypeId: roomTypeId ? Number(roomTypeId) : null,
         roomCharge: roomCharge !== undefined ? Number(roomCharge) : undefined,
         nursingCharge: nursingCharge !== undefined ? Number(nursingCharge) : undefined,
         rmoCharge: rmoCharge !== undefined ? Number(rmoCharge) : undefined,
+        incentiviseCharge: incentiviseCharge !== undefined ? Number(incentiviseCharge) : undefined,
+        monitorCharge: monitorCharge !== undefined ? Number(monitorCharge) : undefined,
         visitCharge: visitCharge !== undefined ? Number(visitCharge) : undefined,
         notes: notes !== undefined ? (notes || null) : undefined,
-      });
+      } as any);
       res.json(row);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -545,7 +668,7 @@ export async function registerRoutes(
     res.json(medicinesList);
   });
 
-  app.post(api.medicines.create.path, async (req, res) => {
+  app.post(api.medicines.create.path, requireManager, async (req, res) => {
     try {
       const input = api.medicines.create.input.parse(req.body);
       const medicine = await storage.createMedicine(input);
@@ -560,7 +683,7 @@ export async function registerRoutes(
     res.json(types);
   });
 
-  app.post(api.roomTypes.create.path, async (req, res) => {
+  app.post(api.roomTypes.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.roomTypes.create.input.parse(req.body);
       const roomType = await storage.createRoomType(input);
@@ -570,10 +693,45 @@ export async function registerRoutes(
     }
   });
 
+  app.get(api.roomNumbers.list.path, async (_req, res) => {
+    const list = await storage.getRoomNumbers();
+    res.json(list);
+  });
+
+  app.post(api.roomNumbers.create.path, requireAdmin, async (req, res) => {
+    try {
+      const input = api.roomNumbers.create.input.parse(req.body);
+      const normalizedNumber = input.number.trim();
+      const existing = await storage.getRoomNumberByTypeAndNumber(input.roomTypeId, normalizedNumber);
+      if (existing) {
+        return res.status(400).json({ message: "Room number already exists for this room type" });
+      }
+      const roomNumber = await storage.createRoomNumber({
+        roomTypeId: input.roomTypeId,
+        number: normalizedNumber,
+      });
+      res.status(201).json(roomNumber);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete("/api/room-numbers/:id", requireAdmin, async (req, res) => {
+    await storage.deleteRoomNumber(Number(req.params.id));
+    res.sendStatus(204);
+  });
+
   app.post(api.visits.create.path, async (req, res) => {
     try {
       const input = api.visits.create.input.parse(req.body);
-      const visit = await storage.createVisit(input);
+      const { date, ...visitInput } = input;
+      const visit = await storage.createVisit({
+        ...visitInput,
+        ...(date ? { date: new Date(date) } : {}),
+      } as any);
       res.status(201).json(visit);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -612,7 +770,10 @@ export async function registerRoutes(
         category: z.enum(["OTHER", "PROSTHESIS", "PATHOLOGY", "RADIOLOGY"]),
         defaultAmount: z.coerce.number().min(0).default(0),
       }).parse(req.body);
-      const item = await storage.createOtherChargeCatalogItem(input);
+      const item = await storage.createOtherChargeCatalogItem({
+        ...input,
+        defaultAmount: input.category === "PROSTHESIS" ? 0 : input.defaultAmount,
+      });
       res.status(201).json(item);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -626,7 +787,13 @@ export async function registerRoutes(
         category: z.enum(["OTHER", "PROSTHESIS", "PATHOLOGY", "RADIOLOGY"]).optional(),
         defaultAmount: z.coerce.number().min(0).optional(),
       }).parse(req.body);
-      const item = await storage.updateOtherChargeCatalogItem(Number(req.params.id), input);
+      const existingItems = await storage.getOtherChargeCatalog();
+      const existingItem = existingItems.find((item) => item.id === Number(req.params.id));
+      const nextCategory = input.category ?? existingItem?.category;
+      const item = await storage.updateOtherChargeCatalogItem(Number(req.params.id), {
+        ...input,
+        ...(nextCategory === "PROSTHESIS" ? { defaultAmount: 0 } : {}),
+      });
       res.json(item);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -780,6 +947,9 @@ export async function registerRoutes(
         anaesthetistCharge: z.coerce.number().min(0).default(0),
         otCharge: z.coerce.number().min(0).default(0),
         otAssistantCharge: z.coerce.number().min(0).default(0),
+        armLaminarCharge: z.coerce.number().min(0).default(0),
+        airFlowSterilisationCharge: z.coerce.number().min(0).default(0),
+        gaksCharge: z.coerce.number().min(0).default(0),
       }).parse(req.body);
       const { date, ...rest } = data;
       const surgeryData: any = { patientId, ...rest };

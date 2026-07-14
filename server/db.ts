@@ -2,8 +2,21 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@shared/schema";
 
+const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const hasPgConfig = Boolean(
+  process.env.PGHOST &&
+  process.env.PGPORT &&
+  process.env.PGUSER &&
+  process.env.PGPASSWORD &&
+  process.env.PGDATABASE,
+);
+
+if (!hasDatabaseUrl && !hasPgConfig) {
+  throw new Error("Database is not configured. Set DATABASE_URL or PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE.");
+}
+
 const pool = new Pool(
-  process.env.DATABASE_URL
+  hasDatabaseUrl
     ? {
         connectionString: process.env.DATABASE_URL,
       }

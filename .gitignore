@@ -6,3 +6,9 @@ vite.config.ts.*
 *.tar.gz
 .config
 .local
+.vscode
+tunnel
+.env
+.env.*
+!.env.example
+*.log

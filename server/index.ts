@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -69,7 +70,13 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  await seedProductionData();
+  const shouldSeedDefaultData =
+    process.env.NODE_ENV !== "production" || process.env.SEED_DEFAULT_DATA === "true";
+
+  if (shouldSeedDefaultData) {
+    await seedProductionData();
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -104,7 +111,7 @@ app.use((req, res, next) => {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
+      ...(process.platform === "win32" ? {} : { reusePort: true }),
     },
     () => {
       log(`serving on port ${port}`);

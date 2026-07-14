@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 process.env.NODE_ENV ??= "development";
 process.env.PORT ??= "5000";
 
