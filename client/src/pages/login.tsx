@@ -46,7 +46,7 @@ export default function Login() {
             <img src={logoImg} alt="Criticare Logo" className="w-full h-full object-contain" />
           </div>
           <CardTitle className="text-3xl font-display font-bold text-primary tracking-tight">
-            Criticare IPD
+            Criticare IPD Test
           </CardTitle>
           <CardDescription className="text-base font-medium">
             Sign in to access the hospital management system
