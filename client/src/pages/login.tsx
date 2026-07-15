@@ -63,7 +63,7 @@ export default function Login() {
                     <FormLabel className="text-foreground/80">Email Address</FormLabel>
                     <FormControl>
                       <Input 
-                        placeholder="doctor@medicare.com" 
+                        placeholder="doctor@criticare.com" 
                         {...field} 
                         className="h-12 rounded-xl bg-card border-2 focus-visible:ring-primary/20"
                       />
