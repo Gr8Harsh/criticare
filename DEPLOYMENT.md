@@ -166,3 +166,5 @@ Before going live, test these flows on the production database:
 - Discharge patient
 - Print receipt
 - Open all bill modes
+
+bf9fe98c510488bd51fc11ae4927edf226e878e8fbced8103c511709eb883b183a107dd04b2b7fecd75aa11d9924d1b8f78c2491ab3a14fb00fa49e2adfd2d2f.9b88a16ea9835622a0b7541ee84215f1
